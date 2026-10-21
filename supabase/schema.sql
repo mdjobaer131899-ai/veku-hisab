@@ -395,3 +395,86 @@ language sql stable security definer set search_path = '' as $$
 $$;
 revoke execute on function public.pub_info(), public.my_account() from public, anon;
 grant execute on function public.pub_info(), public.my_account() to authenticated;
+
+-- ===== rates frozen per entry, contracts, discounts, site payments, owner money, cash book (added later) =====
+alter table public.entries add column rate numeric not null default 0;   -- 0 = use the site's current rate
+alter table public.sites add column bill_type text not null default 'hour' check (bill_type in ('hour','contract'));
+alter table public.sites add column contract_amount numeric not null default 0;
+alter table public.sites add column discount numeric not null default 0;
+alter table public.settings add column season_start date;
+
+create table public.site_payments (
+  id uuid primary key default gen_random_uuid(),
+  site_id uuid not null references public.sites(id) on delete cascade,
+  date date not null,
+  amount numeric not null check (amount > 0),
+  note text not null default '',
+  created_at timestamptz not null default now()
+);
+create index site_payments_site_idx on public.site_payments(site_id);
+create index site_payments_date_idx on public.site_payments(date);
+alter table public.site_payments enable row level security;
+create policy site_payments_owner on public.site_payments for all to authenticated using ((select public.is_owner())) with check ((select public.is_owner()));
+
+create table public.owner_tx (
+  id uuid primary key default gen_random_uuid(),
+  owner_id text not null,
+  date date not null,
+  amount numeric not null check (amount > 0),
+  kind text not null check (kind in ('take','give')),
+  note text not null default '',
+  created_at timestamptz not null default now()
+);
+create index owner_tx_date_idx on public.owner_tx(date);
+alter table public.owner_tx enable row level security;
+create policy owner_tx_owner on public.owner_tx for all to authenticated using ((select public.is_owner())) with check ((select public.is_owner()));
+
+create function public.site_totals() returns table(site_id uuid, hours_v1 numeric, hours_v2 numeric, deposit numeric, paid numeric, billed numeric, days bigint, first_date date, last_date date, n bigint)
+language plpgsql stable security definer set search_path = '' as $$
+#variable_conflict use_column
+begin
+  if not public.is_owner() then raise exception 'not allowed' using errcode = '42501'; end if;
+  return query
+    select s.id,
+      coalesce(e.h1, 0), coalesce(e.h2, 0), coalesce(e.dep, 0), coalesce(p.amt, 0), coalesce(e.billed, 0),
+      coalesce(e.days, 0), e.first_date, e.last_date, coalesce(e.n, 0) + coalesce(p.n, 0)
+    from public.sites s
+    left join (
+      select x.site_id,
+        sum(x.hours) filter (where x.veku = 'v1') as h1,
+        sum(x.hours) filter (where x.veku = 'v2') as h2,
+        sum(x.deposit) as dep,
+        sum(x.hours * case when x.rate > 0 then x.rate else ss.rate end) as billed,
+        count(distinct x.date) filter (where x.hours > 0) as days,
+        min(x.date) as first_date, max(x.date) as last_date, count(*) as n
+      from public.entries x join public.sites ss on ss.id = x.site_id group by x.site_id
+    ) e on e.site_id = s.id
+    left join (
+      select y.site_id, sum(y.amount) as amt, count(*) as n from public.site_payments y group by y.site_id
+    ) p on p.site_id = s.id;
+end $$;
+
+-- approve_submission now also stores the rate (see the live definition)
+
+create function public.cash_part(p_from date, p_to date) returns jsonb
+language sql stable security definer set search_path = '' as $$
+  select jsonb_build_object(
+    'site_in', coalesce((select sum(deposit) from public.entries where (p_from is null or date >= p_from) and (p_to is null or date <= p_to)), 0)
+             + coalesce((select sum(amount) from public.site_payments where (p_from is null or date >= p_from) and (p_to is null or date <= p_to)), 0),
+    'owner_give', coalesce((select sum(amount) from public.owner_tx where kind = 'give' and (p_from is null or date >= p_from) and (p_to is null or date <= p_to)), 0),
+    'diesel_cash', coalesce((select sum(fuel_cost) from public.entries where fuel_pay = 'cash' and (p_from is null or date >= p_from) and (p_to is null or date <= p_to)), 0),
+    'shop_paid', coalesce((select sum(amount) from public.shop_payments where (p_from is null or date >= p_from) and (p_to is null or date <= p_to)), 0),
+    'driver_paid', coalesce((select sum(amount) from public.driver_payments where (p_from is null or date >= p_from) and (p_to is null or date <= p_to)), 0),
+    'repairs', coalesce((select sum(amount) from public.repairs where (p_from is null or date >= p_from) and (p_to is null or date <= p_to)), 0),
+    'owner_take', coalesce((select sum(amount) from public.owner_tx where kind = 'take' and (p_from is null or date >= p_from) and (p_to is null or date <= p_to)), 0)
+  );
+$$;
+create function public.cash_book(p_from date, p_to date) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+begin
+  if not public.is_owner() then raise exception 'not allowed' using errcode = '42501'; end if;
+  return jsonb_build_object('all', public.cash_part(null, null), 'period', public.cash_part(p_from, p_to));
+end $$;
+revoke execute on function public.site_totals(), public.cash_part(date, date), public.cash_book(date, date) from public, anon;
+revoke execute on function public.cash_part(date, date) from authenticated;
+grant execute on function public.site_totals(), public.cash_book(date, date) to authenticated;

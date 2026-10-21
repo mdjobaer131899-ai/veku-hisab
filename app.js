@@ -48,12 +48,13 @@ function digitsHTML(){return '<div class="seg2" role="group" aria-label="সং�
 /* ---------- settings ---------- */
 function normVekus(v){v=v||{};return {v1:{name:(v.v1&&v.v1.name)||'ভেকু ১'},v2:{name:(v.v2&&v.v2.name)||'ভেকু ২'}};}
 function normShops(a){return Array.isArray(a)?a.map(function(x){return String(x||'').trim();}).filter(Boolean):[];}
-function defaultOwners(){return [1,2,3,4,5].map(function(i){return {name:'মালিক '+DIG(i),s1:20,s2:20};});}
+function uid(){try{return crypto.randomUUID();}catch(e){return 'o'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);}}
+function defaultOwners(){return [1,2,3,4,5].map(function(i){return {id:uid(),name:'মালিক '+DIG(i),s1:20,s2:20};});}
 function normSettings(s){
   s=s||{};
   return {vekus:normVekus(s.vekus),
-    owners:(Array.isArray(s.owners)&&s.owners.length)?s.owners.map(function(o){return {name:String(o.name||''),s1:+o.s1||0,s2:+o.s2||0};}):defaultOwners(),
-    diesel_rate:+s.diesel_rate||0,shops:normShops(s.shops)};
+    owners:(Array.isArray(s.owners)&&s.owners.length)?s.owners.map(function(o){return {id:o.id||'',name:String(o.name||''),s1:+o.s1||0,s2:+o.s2||0};}):defaultOwners(),
+    diesel_rate:+s.diesel_rate||0,shops:normShops(s.shops),season_start:s.season_start||null};
 }
 
 /* ---------- supabase ---------- */
@@ -84,13 +85,13 @@ function fnErrText(e){return FNERR[e&&e.code]||errText(e);}
 
 /* ---------- state ---------- */
 var S={phase:'boot',role:null,user:null,needSetup:false,tab:'sum',veku:'v1',year:now.getFullYear(),month:now.getMonth()+1,
-  settings:normSettings(null),drivers:[],entries:[],repairs:[],pending:[],dbal:{},sbal:[],sites:[],ssum:{},
+  settings:normSettings(null),drivers:[],entries:[],repairs:[],pending:[],dbal:{},sbal:[],sites:[],ssum:{},sitePays:[],ownerTx:[],cash:null,season:null,seasonFrom:'',seasonTo:'',
   openDriver:null,openShop:null,openSite:null,stmt:{},shopStmt:{},siteStmt:{},
   acct:null,pub:{vekus:normVekus(),shops:[],sites:[]},mine:[],openMine:false,apDep:{},
   loadErr:'',ownersDraft:null,ownersDirty:false,shown:''};
 function resetData(){
   S.settings=normSettings(null);S.drivers=[];S.entries=[];S.repairs=[];S.pending=[];S.dbal={};S.sbal=[];S.stmt={};S.shopStmt={};
-  S.sites=[];S.ssum={};S.siteStmt={};S.openSite=null;S.apDep={};
+  S.sites=[];S.ssum={};S.siteStmt={};S.openSite=null;S.sitePays=[];S.ownerTx=[];S.cash=null;S.season=null;S.seasonFrom='';S.seasonTo='';S.apDep={};
   S.acct=null;S.mine=[];S.ownersDraft=null;S.ownersDirty=false;S.tab='sum';S.openDriver=null;S.openShop=null;
 }
 
@@ -105,11 +106,16 @@ function qSettings(){return q(sb.from('settings').select('*').eq('id',1).maybeSi
 function qSites(){return q(sb.from('sites').select('*').order('created_at'));}
 function setSsum(rows){var m={};(rows||[]).forEach(function(r){m[r.site_id]=r;});S.ssum=m;}
 async function loadOwner(){
-  var r=await Promise.all([qSettings(),qDrivers(),qEntries(),qRepairs(),qPending(),q(sb.rpc('driver_balances')),q(sb.rpc('shop_balances')),qSites(),q(sb.rpc('site_summary'))]);
-  S.settings=normSettings(r[0]);S.drivers=r[1]||[];S.entries=r[2];S.repairs=r[3];S.pending=r[4]||[];setDbal(r[5]);S.sbal=r[6]||[];S.sites=r[7]||[];setSsum(r[8]);
+  var r=await Promise.all([qSettings(),qDrivers(),qEntries(),qRepairs(),qPending(),q(sb.rpc('driver_balances')),q(sb.rpc('shop_balances')),qSites(),q(sb.rpc('site_totals')),qSitePays(),qOwnerTx()]);
+  S.settings=normSettings(r[0]);S.drivers=r[1]||[];S.entries=r[2];S.repairs=r[3];S.pending=r[4]||[];setDbal(r[5]);S.sbal=r[6]||[];S.sites=r[7]||[];setSsum(r[8]);S.sitePays=r[9]||[];S.ownerTx=r[10]||[];
+  if(S.settings.owners.some(function(o){return !o.id;})){var st=clone(S.settings);st.owners.forEach(function(o){if(!o.id)o.id=uid();});saveSettings(st).catch(function(){});}
 }
-async function reloadYear(){var r=await Promise.all([qEntries(),qRepairs()]);S.entries=r[0];S.repairs=r[1];}
-async function reloadBal(){var r=await Promise.all([q(sb.rpc('driver_balances')),q(sb.rpc('shop_balances')),q(sb.rpc('site_summary'))]);setDbal(r[0]);S.sbal=r[1]||[];setSsum(r[2]);S.stmt={};S.shopStmt={};S.siteStmt={};}
+function qSitePays(){return fetchAll(function(){return sb.from('site_payments').select('*').order('date').order('created_at');});}
+function qOwnerTx(){return fetchAll(function(){return sb.from('owner_tx').select('*').order('date').order('created_at');});}
+async function reloadSitePays(){S.sitePays=await qSitePays();S.cash=null;}
+async function reloadOwnerTx(){S.ownerTx=await qOwnerTx();S.cash=null;}
+async function reloadYear(){var r=await Promise.all([qEntries(),qRepairs()]);S.entries=r[0];S.repairs=r[1];S.cash=null;}
+async function reloadBal(){var r=await Promise.all([q(sb.rpc('driver_balances')),q(sb.rpc('shop_balances')),q(sb.rpc('site_totals'))]);setDbal(r[0]);S.sbal=r[1]||[];setSsum(r[2]);S.stmt={};S.shopStmt={};S.siteStmt={};S.cash=null;}
 async function reloadSites(){S.sites=await qSites()||[];}
 async function reloadDrivers(){S.drivers=await qDrivers()||[];}
 async function reloadSettings(){S.settings=normSettings(await qSettings());}
@@ -172,13 +178,14 @@ function totals(v,m){
   var e=rowsE(v,m),r=rowsR(v,m),t={hours:0,litres:0,fuel:0,deposit:0,driver:0,repair:0,days:0,n:e.length+r.length},days={};
   t.income=0;t.unratedHours=0;
   e.forEach(function(x){t.hours+=+x.hours||0;t.litres+=+x.litres||0;t.fuel+=+x.fuel_cost||0;t.deposit+=+x.deposit||0;t.driver+=+x.driver_wage||0;if((+x.hours||0)>0)days[x.date]=1;
-    var rate=siteRate(x.site_id);if(rate>0)t.income+=(+x.hours||0)*rate;else{t.income+=+x.deposit||0;if(+x.hours>0)t.unratedHours+=+x.hours;}});
+    t.income+=entryIncome(x);if(+x.hours>0&&!sitePriced(x.site_id?siteBy(x.site_id):null))t.unratedHours+=+x.hours;});
+  S.sitePays.forEach(function(p){if(inPeriod(p,m))t.income+=unpricedPayShare(p,v);});
   r.forEach(function(x){t.repair+=+x.amount||0;});
   t.days=Object.keys(days).length;t.cost=t.fuel+t.driver+t.repair;t.net=t.income-t.cost;t.lph=t.hours?t.litres/t.hours:0;
   return t;
 }
 function siteRate(id){var x=id?siteBy(id):null;return x?(+x.rate||0):0;}
-function sitesDueTotal(){var d=0;S.sites.forEach(function(x){if(+x.rate>0){var a=siteSum(x.id),v=a.hours*x.rate-a.deposit;if(v>0)d+=v;}});return d;}
+function sitesDueTotal(){var d=0;S.sites.forEach(function(x){if(sitePriced(x)){var v=siteDue(x);if(v>0)d+=v;}});return d;}
 function periodLabel(){return S.month?MONTHS[S.month-1]+' '+DIG(S.year):DIG(S.year)+' সাল (সব মাস)';}
 function pIn(){return S.month?MONTHS[S.month-1]+' '+DIG(S.year)+'-এ':DIG(S.year)+' সালে';}
 function pOf(){return S.month?MONTHS[S.month-1]+' '+DIG(S.year)+'-এর':DIG(S.year)+' সালের';}
@@ -189,7 +196,25 @@ function siteName(r){var s=siteBy(r.site_id);return s?s.name:(r.site||r.site_nam
 function activeSites(){return S.sites.filter(function(s){return s.status!=='done';});}
 function siteByName(name){var k=String(name||'').trim().toLowerCase();return S.sites.filter(function(s){return s.name.trim().toLowerCase()===k;})[0]||null;}
 function lastSiteId(v){var all=S.entries.filter(function(r){return r.veku===v&&r.site_id;}).sort(byDate);var id=all.length?all[all.length-1].site_id:'';var s=siteBy(id);return s&&s.status!=='done'?id:'';}
-function siteSum(id){var r=S.ssum[id]||{};var h1=+r.hours_v1||0,h2=+r.hours_v2||0;return {h1:h1,h2:h2,hours:h1+h2,deposit:+r.deposit||0,days:+r.days||0,first:r.first_date||null,last:r.last_date||null,n:+r.n||0};}
+function siteSum(id){var r=S.ssum[id]||{};var h1=+r.hours_v1||0,h2=+r.hours_v2||0;return {h1:h1,h2:h2,hours:h1+h2,deposit:+r.deposit||0,paid:+r.paid||0,billed:+r.billed||0,days:+r.days||0,first:r.first_date||null,last:r.last_date||null,n:+r.n||0};}
+function siteGross(s){return s.bill_type==='contract'?(+s.contract_amount||0):siteSum(s.id).billed;}
+function sitePriced(s){return !!s&&(s.bill_type==='contract'?+s.contract_amount>0:(+s.rate>0||siteSum(s.id).billed>0));}
+function siteNetBill(s){return Math.max(0,siteGross(s)-(+s.discount||0));}
+function siteReceived(s){var a=siteSum(s.id);return a.deposit+a.paid;}
+function siteDue(s){return siteNetBill(s)-siteReceived(s);}
+function entryRate(e,s){return +e.rate>0?+e.rate:(+(s&&s.rate)||0);}
+function entryIncome(e){
+  var s=e.site_id?siteBy(e.site_id):null;
+  if(!sitePriced(s))return +e.deposit||0;
+  var gross=siteGross(s),f=gross>0?siteNetBill(s)/gross:1,base;
+  if(s.bill_type==='contract'){var H=siteSum(s.id).hours;base=H>0?(+e.hours||0)*gross/H:0;}
+  else base=(+e.hours||0)*entryRate(e,s);
+  return base*f;
+}
+function unpricedPayShare(p,v){
+  var s=siteBy(p.site_id);if(!s||sitePriced(s))return 0;
+  var a=siteSum(p.site_id),H=a.h1+a.h2,sh=H>0?(v==='v1'?a.h1:a.h2)/H:0.5;return (+p.amount||0)*sh;
+}
 function lastDriverFor(v){var all=S.entries.filter(function(r){return r.veku===v&&r.driver_id;}).sort(byDate);return all.length?all[all.length-1].driver_id:'';}
 function driverBy(id){return S.drivers.filter(function(d){return d.id===id;})[0]||null;}
 function driverName(id){var d=driverBy(id);return d?(d.name||'ড্রাইভার'):'ড্রাইভার';}
@@ -261,7 +286,7 @@ function render(){
   }else if(isOwnerApp()){
     top.innerHTML='';
     if(!(S.tab==='owners'&&S.ownersDirty&&S.shown==='owners')){
-      main.innerHTML=({sum:sumHTML,approve:approveHTML,daily:ledgerHTML,repair:repairHTML,sites:sitesHTML,drivers:driversHTML,diesel:dieselHTML,owners:ownersHTML})[S.tab]();S.shown=S.tab;
+      main.innerHTML=({sum:sumHTML,approve:approveHTML,daily:ledgerHTML,repair:repairHTML,sites:sitesHTML,drivers:driversHTML,diesel:dieselHTML,cash:cashHTML,owners:ownersHTML})[S.tab]();S.shown=S.tab;
     }
   }else{
     top.innerHTML='';
@@ -284,6 +309,7 @@ function ensureStmts(){
   if(S.tab==='drivers'&&d&&!S.stmt[d])go('d'+d,function(){return loadDriverStmt(d);});
   if(S.tab==='diesel'&&sh&&!S.shopStmt[sh])go('s'+sh,function(){return loadShopStmt(sh);});
   if(S.tab==='sites'&&si&&!S.siteStmt[si])go('t'+si,function(){return loadSiteStmt(si);});
+  if(S.tab==='cash'&&(!S.cash||S.cash.key!==cashKey()))go('c'+cashKey(),loadCash);
 }
 function loadingHTML(){return '<div class="loading">'+EXC+'<p>খাতা খোলা হচ্ছে…</p></div>';}
 function msgHTML(h,p,act){return '<section class="empty">'+EXC+'<h2>'+esc(h)+'</h2><p>'+esc(p)+'</p><div class="actions">'+(act||'')+'</div></section>';}
@@ -311,7 +337,6 @@ function vcardHTML(v,t){
     '<div class="barbox">'+barHTML(t)+LEGEND+(t.net<0&&t.income>0?'<p class="hint">কালো দাগ পর্যন্ত আয়। খরচ আয়ের চেয়ে '+tka(t.net)+' বেশি।</p>':'')+'</div>'+
     '<dl class="facts">'+
       '<div><dt>ভেকু চলেছে</dt><dd>'+q1(t.hours)+' ঘণ্টা</dd></div>'+
-      '<div><dt>সাইট থেকে জমা পেয়েছেন</dt><dd>'+tk(t.deposit)+'</dd></div>'+
       '<div><dt>ডিজেল নেওয়া হয়েছে</dt><dd>'+q1(t.litres)+' লিটার</dd></div>'+
       '<div><dt>গড়ে প্রতি ঘণ্টায় ডিজেল</dt><dd>'+(t.hours&&t.litres?NF1.format(t.lph)+' লিটার':'—')+'</dd></div>'+
       '<div><dt>ডিজেলের খরচ</dt><dd>'+tk(t.fuel)+'</dd></div>'+
@@ -334,7 +359,7 @@ function ownersShareHTML(t){
   var w=[];
   if(Math.abs(s1-100)>0.01)w.push(esc(vName('v1'))+'-এর মোট অংশ '+DIG(s1)+'%');
   if(Math.abs(s2-100)>0.01)w.push(esc(vName('v2'))+'-এর মোট অংশ '+DIG(s2)+'%');
-  if(w.length)h+='<p class="warn">'+w.join(', ')+'। মোট ১০০% হওয়া দরকার। "মালিক ও সেটিংস" পাতায় ঠিক করুন।</p>';
+  if(w.length)h+='<p class="warn">'+w.join(', ')+'। মোট ১০০% হওয়া দরকার। "সেটিংস" পাতায় ঠিক করুন।</p>';
   return h+'</section>';
 }
 function duesPanelHTML(){
@@ -361,12 +386,12 @@ function monthTableHTML(){
 }
 function sumHTML(){
   var t={v1:totals('v1'),v2:totals('v2')};
-  var inc=t.v1.income+t.v2.income,dep=t.v1.deposit+t.v2.deposit,cost=t.v1.cost+t.v2.cost,net=inc-cost,un=t.v1.unratedHours+t.v2.unratedHours,due=sitesDueTotal();
+  var inc=t.v1.income+t.v2.income,dep=t.v1.deposit+t.v2.deposit+sum(S.sitePays.filter(function(p){return inPeriod(p);}),function(p){return p.amount;}),cost=t.v1.cost+t.v2.cost,net=inc-cost,un=t.v1.unratedHours+t.v2.unratedHours,due=sitesDueTotal();
   var h='<section class="hero"><p class="eyebrow">'+periodLabel()+' · দুই ভেকু মিলে নিট '+netWord(net)+'</p>'+
     '<p class="big '+(net<0?'neg':net>0?'pos':'zero')+'">'+tka(net)+'</p>'+
     '<p class="hero-sub"><span>কাজের আয় <b>'+tk(inc)+'</b></span><span>মোট খরচ <b>'+tk(cost)+'</b></span></p>'+
     '<p class="hero-sub2"><span>এই সময়ে জমা পেয়েছেন <b>'+tk(dep)+'</b></span><span class="due">সাইটগুলোর কাছে মোট বাকি <b>'+tk(due)+'</b></span></p>'+
-    (un>0?'<p class="hint" style="margin-top:6px">'+q1(un)+' ঘণ্টার কাজ এমন সাইটে, যার ঘণ্টার রেট দেওয়া নেই। সেখানে শুধু জমার টাকাকে আয় ধরা হয়েছে। "সাইট" পাতায় রেট দিন।</p>':'')+
+    (un>0?'<p class="hint" style="margin-top:6px">'+q1(un)+' ঘণ্টার কাজ এমন সাইটে, যার ঘণ্টার রেট বা চুক্তির টাকা দেওয়া নেই। সেখানে শুধু পাওয়া টাকাকে আয় ধরা হয়েছে। "সাইট" পাতায় রেট দিন।</p>':'')+
     '</section>';
   if(!(t.v1.n+t.v2.n))h+=emptyHTML('এখনও কোনো হিসাব খাতায় ওঠেনি');
   h+='<div class="vgrid">'+vcardHTML('v1',t.v1)+vcardHTML('v2',t.v2)+'</div>';
@@ -383,7 +408,7 @@ function fuelLine(x){
 }
 function apEntry(p){
   var w=wageFor(p.driver_id,p.hours),cost=+p.fuel_cost||0;
-  return {veku:p.veku,date:p.date,site_id:p.site_id||null,site:siteName(p),hours:+p.hours||0,litres:+p.litres||0,fuel_cost:cost,fuel_src:p.fuel_src||'',
+  return {veku:p.veku,date:p.date,site_id:p.site_id||null,site:siteName(p),rate:siteRate(p.site_id),hours:+p.hours||0,litres:+p.litres||0,fuel_cost:cost,fuel_src:p.fuel_src||'',
     fuel_pay:cost>0?(p.fuel_src?'due':'cash'):'',deposit:0,driver_wage:w==null?0:w,driver_id:p.driver_id||null,remarks:p.remarks||''};
 }
 function approveHTML(){
@@ -420,7 +445,7 @@ async function quickApprove(id,btn){
   btn.disabled=true;btn.textContent='কনফার্ম হচ্ছে…';
   try{
     var created=false;
-    if(!e.site_id&&p.site_name){var ex=siteByName(p.site_name);if(ex){e.site_id=ex.id;e.site=ex.name;}else{var ns=await q(sb.from('sites').insert({name:p.site_name.trim()}).select('id').single());e.site_id=ns.id;e.site=p.site_name.trim();created=true;}}
+    if(!e.site_id&&p.site_name){var ex=siteByName(p.site_name);if(ex){e.site_id=ex.id;e.site=ex.name;e.rate=siteRate(ex.id);}else{var ns=await q(sb.from('sites').insert({name:p.site_name.trim()}).select('id').single());e.site_id=ns.id;e.site=p.site_name.trim();created=true;}}
     await q(sb.rpc('approve_submission',{p_id:id,p_entry:e}));
     delete S.apDep[id];
     toast('কনফার্ম হয়েছে'+(e.fuel_pay==='due'?' · '+e.fuel_src+'-এর বাকিতে '+tk(e.fuel_cost)+' উঠেছে':''));
@@ -548,11 +573,9 @@ function dieselHTML(){
 /* ----- owner: sites ----- */
 function periodBySite(){
   var m={};
-  S.entries.forEach(function(e){
-    if(!inPeriod(e))return;
-    var k=e.site_id||'';var x=m[k]||(m[k]={h1:0,h2:0,deposit:0});
-    if(e.veku==='v1')x.h1+=+e.hours||0;else x.h2+=+e.hours||0;x.deposit+=+e.deposit||0;
-  });
+  function g(k){return m[k]||(m[k]={h1:0,h2:0,deposit:0});}
+  S.entries.forEach(function(e){if(!inPeriod(e))return;var x=g(e.site_id||'');if(e.veku==='v1')x.h1+=+e.hours||0;else x.h2+=+e.hours||0;x.deposit+=+e.deposit||0;});
+  S.sitePays.forEach(function(p){if(!inPeriod(p))return;g(p.site_id).deposit+=+p.amount||0;});
   return m;
 }
 function pShort(){return S.month?MONTHS[S.month-1]+'-এ':DIG(S.year)+' সালে';}
@@ -563,33 +586,53 @@ function sitePeriodHTML(){
   var T={h1:0,h2:0,d:0};
   var rows=keys.map(function(k){var x=m[k],s=siteBy(k);T.h1+=x.h1;T.h2+=x.h2;T.d+=x.deposit;
     return '<tr'+(k?' class="click" tabindex="0" data-sitego="'+esc(k)+'"':'')+'><td>'+(s?esc(s.name):'<span class="muted">সাইট বাছাই করা নেই</span>')+'</td><td class="n">'+q1(x.h1)+'</td><td class="n">'+q1(x.h2)+'</td><td class="n"><b>'+q1(x.h1+x.h2)+'</b></td><td class="n">'+amt(x.deposit)+'</td></tr>';}).join('');
-  return '<section class="panel"><div class="panel-head"><h2>সাইট অনুযায়ী কাজ</h2><p class="hint">'+pOf()+' হিসাব। কোনো সাইটে চাপ দিলে তার পুরো হিসাব দেখাবে।</p></div>'+
-    '<div class="tbl-wrap"><table class="khata stmt"><thead><tr><th>সাইট</th><th class="n" title="'+esc(vName('v1'))+'">'+plate('v1')+'<small>ঘণ্টা</small></th><th class="n" title="'+esc(vName('v2'))+'">'+plate('v2')+'<small>ঘণ্টা</small></th><th class="n">মোট<small>ঘণ্টা</small></th><th class="n">জমা<small>৳</small></th></tr></thead><tbody>'+rows+
+  return '<section class="panel"><div class="panel-head"><h2>সাইট অনুযায়ী কাজ</h2><p class="hint">'+pOf()+' হিসাব। "পেয়েছেন" মানে এই সময়ে সাইট থেকে হাতে পাওয়া টাকা। কোনো সাইটে চাপ দিলে তার পুরো হিসাব দেখাবে।</p></div>'+
+    '<div class="tbl-wrap"><table class="khata stmt"><thead><tr><th>সাইট</th><th class="n" title="'+esc(vName('v1'))+'">'+plate('v1')+'<small>ঘণ্টা</small></th><th class="n" title="'+esc(vName('v2'))+'">'+plate('v2')+'<small>ঘণ্টা</small></th><th class="n">মোট<small>ঘণ্টা</small></th><th class="n">পেয়েছেন<small>৳</small></th></tr></thead><tbody>'+rows+
     '</tbody><tfoot><tr><td>মোট</td><td class="n">'+q1(T.h1)+'</td><td class="n">'+q1(T.h2)+'</td><td class="n">'+q1(T.h1+T.h2)+'</td><td class="n">'+amt(T.d)+'</td></tr></tfoot></table></div></section>';
 }
+function siteBasis(s){
+  if(s.bill_type==='contract')return +s.contract_amount>0?'চুক্তি '+tk(s.contract_amount):'চুক্তির টাকা দেওয়া নেই';
+  return +s.rate>0?'প্রতি ঘণ্টা '+tk(s.rate):'ঘণ্টার রেট দেওয়া নেই';
+}
 function siteCardHTML(s,pm){
-  var a=siteSum(s.id),p=pm[s.id]||{h1:0,h2:0},open=S.openSite===s.id,done=s.status==='done';
-  var info=[s.client,s.phone?bnPhone(s.phone):'',s.address].filter(Boolean).map(esc).join(' · ');
-  var bill=+s.rate>0?a.hours*s.rate:0,due=bill-a.deposit;
+  var a=siteSum(s.id),p=pm[s.id]||{h1:0,h2:0},open=S.openSite===s.id,done=s.status==='done',priced=sitePriced(s);
+  var info=[siteBasis(s),s.client,s.phone?bnPhone(s.phone):'',s.address].filter(Boolean).map(esc).join(' · ');
+  var rec=siteReceived(s),due=siteDue(s);
   var span=a.first?(sdate(a.first)+(a.last&&a.last!==a.first?' থেকে '+sdate(a.last):'')):'';
+  var money=priced?'<dl class="facts">'+
+      '<div><dt>'+(s.bill_type==='contract'?'চুক্তির টাকা':'বিল ('+q1(a.hours)+' ঘণ্টা)')+'</dt><dd>'+tk(siteGross(s))+'</dd></div>'+
+      (+s.discount>0?'<div><dt>ছাড় দিয়েছেন</dt><dd>'+tk(s.discount)+'</dd></div>':'')+
+      '<div><dt>পেয়েছেন</dt><dd>'+tk(rec)+'</dd></div>'+
+      '<div><dt>'+(due<0?'বেশি পেয়েছেন':'বাকি')+'</dt><dd class="'+(due>0?'neg':'pos')+'">'+tka(due)+'</dd></div></dl>':
+    '<p class="note">ঘণ্টার রেট বা চুক্তির টাকা দেওয়া নেই, তাই বিল আর বাকি হিসাব হচ্ছে না। এ পর্যন্ত পেয়েছেন '+tk(rec)+'। "বদলান" চেপে রেট দিন।</p>';
   return '<article class="pcard'+(open?' wide':'')+'"><div class="phead"><b>'+esc(s.name)+'</b><span class="st '+(done?'plain':'on')+'">'+(done?'শেষ':'চলমান')+'</span></div>'+
-    (info?'<p class="hint">'+info+'</p>':'')+
-    '<div class="kv3"><div><span>'+pShort()+'</span><b>'+q1(p.h1+p.h2)+' ঘণ্টা</b></div><div><span>মোট ঘণ্টা</span><b>'+q1(a.hours)+'</b></div><div><span>মোট জমা</span><b>'+tk(a.deposit)+'</b></div></div>'+
+    '<p class="hint">'+info+'</p>'+
+    '<div class="kv3"><div><span>'+pShort()+'</span><b>'+q1(p.h1+p.h2)+' ঘণ্টা</b></div><div><span>মোট ঘণ্টা</span><b>'+q1(a.hours)+'</b></div><div><span>'+(priced?(due<0?'বেশি পেয়েছেন':'বাকি'):'পেয়েছেন')+'</span><b class="'+(priced&&due>0?'neg':'')+'">'+(priced?tka(due):tk(rec))+'</b></div></div>'+
     '<p class="hint">'+esc(vName('v1'))+': '+q1(a.h1)+' ঘণ্টা · '+esc(vName('v2'))+': '+q1(a.h2)+' ঘণ্টা · '+DIG(a.days)+' দিন কাজ'+(span?' · '+span:'')+'</p>'+
-    (+s.rate>0?'<dl class="facts"><div><dt>বিল ('+q1(a.hours)+' ঘণ্টা × '+tk(s.rate)+')</dt><dd>'+tk(bill)+'</dd></div><div><dt>'+(due<0?'বেশি পেয়েছেন':'পাওনা বাকি')+'</dt><dd class="'+(due>0?'neg':'pos')+'">'+tk(Math.abs(due))+'</dd></div></dl>':'')+
-    '<div class="actions"><button type="button" class="btn small" data-siteopen="'+esc(s.id)+'">'+(open?'হিসাব লুকান':'হিসাব দেখুন')+'</button>'+(done?'':'<button type="button" class="btn primary small" data-siteadd="'+esc(s.id)+'">+ হিসাব লিখুন</button>')+'<button type="button" class="btn ghost small" data-siteedit="'+esc(s.id)+'">বদলান</button></div>'+
+    money+
+    '<div class="actions"><button type="button" class="btn primary small" data-sitepay="'+esc(s.id)+'">টাকা পেলাম</button>'+(done?'':'<button type="button" class="btn small" data-siteadd="'+esc(s.id)+'">+ হিসাব লিখুন</button>')+
+      '<button type="button" class="btn small" data-siteopen="'+esc(s.id)+'">'+(open?'হিসাব লুকান':'হিসাব দেখুন')+'</button><button type="button" class="btn ghost small" data-siteedit="'+esc(s.id)+'">বদলান</button>'+
+      (priced&&due>0?'<button type="button" class="btn ghost small" data-sitesettle="'+esc(s.id)+'">হিসাব মেটান</button>':'')+'</div>'+
     (open?siteStmtHTML(s):'')+
   '</article>';
 }
+function siteRows(s){
+  var rows=S.siteStmt[s.id];if(!rows)return null;
+  return rows.map(function(r){return {k:'e',r:r,date:r.date,created_at:r.created_at};})
+    .concat(S.sitePays.filter(function(p){return p.site_id===s.id;}).map(function(p){return {k:'p',r:p,date:p.date,created_at:p.created_at};}))
+    .sort(byDate);
+}
 function siteStmtHTML(s){
-  var rows=S.siteStmt[s.id];
-  if(!rows)return '<p class="muted">লোড হচ্ছে…</p>';
-  if(!rows.length)return '<p class="muted">এই সাইটে এখনও কোনো হিসাব লেখা হয়নি।</p>';
+  var all=siteRows(s);
+  if(!all)return '<p class="muted">লোড হচ্ছে…</p>';
+  if(!all.length)return '<p class="muted">এই সাইটে এখনও কোনো হিসাব লেখা হয়নি।</p>';
   var T={h:0,d:0};
-  var body=rows.map(function(r){T.h+=+r.hours||0;T.d+=+r.deposit||0;
-    return '<tr class="click" tabindex="0" data-sentry="'+esc(r.id)+'"><td class="sd">'+sdate(r.date)+'</td><td>'+plate(r.veku)+'</td><td class="n">'+(+r.hours?q1(r.hours):'—')+'</td><td class="n">'+(+r.deposit?amt(r.deposit):'—')+'</td><td>'+(r.driver_id?esc(driverName(r.driver_id)):'')+'</td></tr>';}).join('');
-  return '<div class="tbl-wrap"><table class="khata stmt"><thead><tr><th>তারিখ</th><th>ভেকু</th><th class="n">ঘণ্টা</th><th class="n">জমা (৳)</th><th>ড্রাইভার</th></tr></thead><tbody>'+body+
-    '</tbody><tfoot><tr><td>মোট</td><td></td><td class="n">'+q1(T.h)+'</td><td class="n">'+amt(T.d)+'</td><td></td></tr></tfoot></table></div>'+
+  var body=all.map(function(x){var r=x.r;
+    if(x.k==='p'){T.d+=+r.amount||0;return '<tr class="click" tabindex="0" data-spx="'+esc(r.id)+'"><td class="sd">'+sdate(r.date)+'</td><td colspan="2">টাকা পেলাম'+(r.note?' · '+esc(r.note):'')+'</td><td class="n">'+amt(r.amount)+'</td></tr>';}
+    T.h+=+r.hours||0;T.d+=+r.deposit||0;
+    return '<tr class="click" tabindex="0" data-sentry="'+esc(r.id)+'"><td class="sd">'+sdate(r.date)+'</td><td>'+plate(r.veku)+(r.driver_id?' '+esc(driverName(r.driver_id)):'')+'</td><td class="n">'+(+r.hours?q1(r.hours):'—')+'</td><td class="n">'+(+r.deposit?amt(r.deposit):'—')+'</td></tr>';}).join('');
+  return '<div class="tbl-wrap"><table class="khata stmt"><thead><tr><th>তারিখ</th><th>ভেকু · ড্রাইভার</th><th class="n">ঘণ্টা</th><th class="n">পেয়েছেন (৳)</th></tr></thead><tbody>'+body+
+    '</tbody><tfoot><tr><td>মোট</td><td></td><td class="n">'+q1(T.h)+'</td><td class="n">'+amt(T.d)+'</td></tr></tfoot></table></div>'+
     '<div class="below"><p class="hint">কোনো সারিতে চাপ দিলে সেটি বদলানো যাবে।</p><button type="button" class="btn small" data-sitecsv="'+esc(s.id)+'">Excel-এর জন্য ফাইল নামান (CSV)</button></div>';
 }
 async function loadSiteStmt(id){
@@ -599,12 +642,12 @@ async function loadSiteStmt(id){
 }
 function sitesHTML(){
   var pm=periodBySite();
-  var h='<div class="panel-head"><p class="eyebrow">কোন সাইটে কত ঘণ্টা কাজ</p><h2>সাইটের হিসাব</h2><p class="hint">প্রতিটি দৈনিক হিসাব লেখার সময় সাইট বেছে নিন। ঘণ্টার রেট দিলে বিল আর পাওনা বাকি নিজে হিসাব হবে।</p></div>';
+  var h='<div class="panel-head"><p class="eyebrow">কোন সাইটে কত ঘণ্টা, কত বিল, কত বাকি</p><h2>সাইটের হিসাব</h2><p class="hint">ঘণ্টা হিসাবের সাইটে প্রতিদিনের কাজ সেদিনের রেটে হিসাব হয়, পরে রেট বদলালেও আগের কাজের দাম বদলায় না। চুক্তির সাইটে চুক্তির টাকা কাজের ঘণ্টা অনুযায়ী ভাগ হয়ে আয়ে ওঠে।</p></div>';
   var un=pm['']||null;
   if(un&&(un.h1+un.h2)>0)h+='<p class="note">'+pShort()+' '+q1(un.h1+un.h2)+' ঘণ্টার কাজে কোনো সাইট বাছাই করা নেই। দৈনিক খাতায় সেই সারিতে চাপ দিয়ে সাইট বেছে দিন।</p>';
   var act=S.sites.filter(function(s){return s.status!=='done';}).sort(function(a,b){var x=siteSum(a.id).last||a.created_at,y=siteSum(b.id).last||b.created_at;return x<y?1:x>y?-1:0;});
   if(!S.sites.length){
-    return h+'<section class="empty">'+EXC+'<h2>এখনও কোনো সাইট যোগ করা হয়নি</h2><p>যেখানে ভেকু কাজ করছে, সেই সাইটের নাম যোগ করুন। চাইলে মালিকপক্ষের নাম, ফোন আর ঘণ্টার রেট দিন। দৈনিক হিসাব লেখার সময় "নতুন সাইট" বেছেও যোগ করা যায়।</p><div class="actions"><button type="button" class="btn primary" data-act="add-site">সাইট যোগ করুন</button></div></section>';
+    return h+'<section class="empty">'+EXC+'<h2>এখনও কোনো সাইট যোগ করা হয়নি</h2><p>যেখানে ভেকু কাজ করছে, সেই সাইটের নাম যোগ করুন। ঘণ্টা হিসাবে হলে রেট, চুক্তিতে হলে চুক্তির টাকা দিন।</p><div class="actions"><button type="button" class="btn primary" data-act="add-site">সাইট যোগ করুন</button></div></section>';
   }
   h+=act.length?'<div class="plist">'+act.map(function(s){return siteCardHTML(s,pm);}).join('')+'</div>':'<p class="muted">এখন কোনো চলমান সাইট নেই।</p>';
   h+='<div class="actions"><button type="button" class="btn" data-act="add-site">+ নতুন সাইট যোগ করুন</button></div>';
@@ -613,13 +656,123 @@ function sitesHTML(){
   return h;
 }
 function downloadSiteCSV(id){
-  var s=siteBy(id),rows=S.siteStmt[id]||[];if(!s)return;
+  var s=siteBy(id),all=siteRows(s||{id:id})||[];if(!s)return;
   function qq(x){return '"'+String(x==null?'':x).replace(/"/g,'""')+'"';}
-  var L=[[qq(s.name),qq(s.client||''),qq(s.phone||'')],['তারিখ','ভেকু','ঘণ্টা','জমা (৳)','ড্রাইভার','মন্তব্য'].map(qq)];
-  var h=0,d=0;rows.forEach(function(r){h+=+r.hours||0;d+=+r.deposit||0;L.push([r.date,qq(vName(r.veku)),+r.hours||0,+r.deposit||0,qq(r.driver_id?driverName(r.driver_id):''),qq(r.remarks)]);});
-  L.push([qq('মোট'),'',h,d,'','']);
-  if(+s.rate>0){L.push([qq('বিল ('+h+' ঘণ্টা × '+s.rate+')'),'','',h*s.rate,'','']);L.push([qq('পাওনা বাকি'),'','',h*s.rate-d,'','']);}
+  var L=[[qq(s.name),qq(s.client||''),qq(s.phone||''),qq(siteBasis(s))],['তারিখ','বিবরণ','ঘণ্টা','রেট (৳)','পেয়েছেন (৳)','মন্তব্য'].map(qq)];
+  var h=0,d=0;
+  all.forEach(function(x){var r=x.r;
+    if(x.k==='p'){d+=+r.amount||0;L.push([r.date,qq('টাকা পেলাম'),'','',+r.amount||0,qq(r.note)]);return;}
+    h+=+r.hours||0;d+=+r.deposit||0;L.push([r.date,qq(vName(r.veku)+(r.driver_id?' · '+driverName(r.driver_id):'')),+r.hours||0,s.bill_type==='contract'?'':entryRate(r,s),+r.deposit||0,qq(r.remarks)]);});
+  L.push([qq('মোট'),'',h,'',d,'']);
+  if(sitePriced(s)){
+    L.push([qq(s.bill_type==='contract'?'চুক্তির টাকা':'বিল'),'','','',siteGross(s),'']);
+    if(+s.discount>0)L.push([qq('ছাড়'),'','','',+s.discount,'']);
+    L.push([qq('বাকি'),'','','',siteDue(s),'']);
+  }
   saveFile('site-'+s.name.replace(/[^\wঀ-৿]+/g,'-')+'.csv','﻿'+L.map(function(l){return l.join(',');}).join('\r\n'));
+}
+
+/* ----- owner: cash & owners ----- */
+function periodRange(){
+  if(S.month){var last=new Date(S.year,S.month,0).getDate();return [S.year+'-'+pad(S.month)+'-01',S.year+'-'+pad(S.month)+'-'+pad(last)];}
+  return [S.year+'-01-01',S.year+'-12-31'];
+}
+function cashKey(){return periodRange().join('_');}
+function cashIn(c){return (+c.site_in||0)+(+c.owner_give||0);}
+function cashOut(c){return (+c.diesel_cash||0)+(+c.shop_paid||0)+(+c.driver_paid||0)+(+c.repairs||0)+(+c.owner_take||0);}
+async function loadCash(){
+  var key=cashKey(),r=periodRange();
+  try{var d=await q(sb.rpc('cash_book',{p_from:r[0],p_to:r[1]}));S.cash={key:key,all:d.all,period:d.period};}
+  catch(e){S.cash={key:key,err:errText(e)};}
+  render();
+}
+function ownerName(id){var o=S.settings.owners.filter(function(x){return x.id===id;})[0];return o?(o.name||'মালিক'):'মালিক';}
+function ownerTxSum(id,from,to){var t=0,g=0;S.ownerTx.forEach(function(x){if(x.owner_id!==id)return;if(from&&x.date<from)return;if(to&&x.date>to)return;if(x.kind==='take')t+=+x.amount||0;else g+=+x.amount||0;});return {take:t,give:g};}
+function fact(label,v,cls){return '<div><dt>'+label+'</dt><dd'+(cls?' class="'+cls+'"':'')+'>'+tk(v)+'</dd></div>';}
+function cashHTML(){
+  var c=S.cash&&S.cash.key===cashKey()?S.cash:null;
+  var h='<div class="panel-head"><p class="eyebrow">সাইটের সব টাকা আপনার হাতে আসে ধরে</p><h2>ক্যাশ ও মালিক</h2></div>';
+  if(!c)return h+'<p class="muted">লোড হচ্ছে…</p>';
+  if(c.err)return h+'<p class="warn">'+esc(c.err)+'</p>';
+  var bal=cashIn(c.all)-cashOut(c.all),p=c.period;
+  h+='<section class="hero"><p class="eyebrow">আজ পর্যন্ত আপনার হাতে থাকার কথা</p><p class="big '+(bal<0?'neg':'pos')+'">'+tka(bal)+'</p>'+
+    (bal<0?'<p class="hint">খরচ আর মালিকদের নেওয়া টাকা সাইট থেকে পাওয়া টাকার চেয়ে '+tka(bal)+' বেশি। এই টাকা কেউ নিজের পকেট থেকে দিয়েছেন। সেটা নিচে "টাকা দিলেন" হিসেবে লিখে রাখুন।</p>':
+      '<p class="hint">হাতের টাকা গুনে এর সঙ্গে মিলিয়ে দেখুন। না মিললে কোনো খরচ বা টাকা পাওয়া লেখা বাকি আছে।</p>')+'</section>';
+  h+='<section class="panel"><div class="panel-head"><h2>'+pOf()+' টাকা আসা-যাওয়া</h2></div>'+
+    '<dl class="facts">'+fact('সাইট থেকে পেয়েছেন',p.site_in,'pos')+fact('মালিকরা ব্যবসায় দিয়েছেন',p.owner_give,'pos')+'</dl>'+
+    '<dl class="facts">'+fact('ডিজেল নগদে কেনা',p.diesel_cash)+fact('ডিজেলের দোকানে দিয়েছেন',p.shop_paid)+fact('ড্রাইভারকে দিয়েছেন',p.driver_paid)+fact('মেরামত ও অন্যান্য',p.repairs)+fact('মালিকরা নিয়েছেন',p.owner_take)+'</dl>'+
+    '<dl class="facts"><div><dt><b>মোট এসেছে</b></dt><dd class="pos">'+tk(cashIn(p))+'</dd></div><div><dt><b>মোট গেছে</b></dt><dd>'+tk(cashOut(p))+'</dd></div></dl></section>';
+  h+=ownersMoneyHTML()+seasonHTML(bal);
+  return h;
+}
+function ownersMoneyHTML(){
+  var h='<section class="panel"><div class="panel-head"><h2>মালিকদের নেওয়া-দেওয়া</h2><p class="hint">কোনো মালিক ব্যবসা থেকে টাকা নিলে বা ব্যবসায় টাকা দিলে এখানে লিখুন। আজ পর্যন্ত সব মিলিয়ে।</p></div><ul class="olist">';
+  S.settings.owners.forEach(function(o){
+    var x=ownerTxSum(o.id);
+    h+='<li><span class="oname">'+esc(o.name||'মালিক')+'</span><span class="oamt">'+tk(x.take)+'</span>'+
+      '<span class="odetail">নিয়েছেন '+tk(x.take)+(x.give?' · দিয়েছেন '+tk(x.give):'')+'</span>'+
+      '<span class="odetail actions" style="margin-top:6px"><button type="button" class="btn small" data-otx="'+esc(o.id)+'" data-kind="take">টাকা নিলেন</button><button type="button" class="btn ghost small" data-otx="'+esc(o.id)+'" data-kind="give">টাকা দিলেন</button></span></li>';
+  });
+  h+='</ul>';
+  var recent=S.ownerTx.slice().sort(function(a,b){return -byDate(a,b);}).slice(0,15);
+  if(recent.length)h+='<div class="tbl-wrap"><table class="khata stmt"><thead><tr><th>তারিখ</th><th>মালিক</th><th class="n">নিলেন (৳)</th><th class="n">দিলেন (৳)</th></tr></thead><tbody>'+
+    recent.map(function(x){return '<tr class="click" tabindex="0" data-otxe="'+esc(x.id)+'"><td class="sd">'+sdate(x.date)+'</td><td>'+esc(ownerName(x.owner_id))+(x.note?'<span class="by">'+esc(x.note)+'</span>':'')+'</td><td class="n">'+(x.kind==='take'?amt(x.amount):'')+'</td><td class="n">'+(x.kind==='give'?amt(x.amount):'')+'</td></tr>';}).join('')+
+    '</tbody></table></div><p class="hint">কোনো সারিতে চাপ দিলে বদলানো বা মুছে ফেলা যাবে।</p>';
+  return h+'</section>';
+}
+function addDays(iso,n){var d=toDate(iso);d.setDate(d.getDate()+n);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+function seasonDefaults(){
+  var from=S.settings.season_start;
+  if(!from){var first=S.entries.slice().sort(byDate)[0];from=first?first.date:S.year+'-01-01';}
+  return [S.seasonFrom||from,S.seasonTo||todayISO()];
+}
+async function calcSeason(){
+  var r=seasonDefaults(),from=r[0],to=r[1];
+  if(from>to){toast('শুরুর তারিখ শেষের তারিখের আগে হতে হবে');return;}
+  S.season={from:from,to:to,loading:true};render();
+  try{
+    var res=await Promise.all([
+      fetchAll(function(){return sb.from('entries').select('*').gte('date',from).lte('date',to).order('date');}),
+      fetchAll(function(){return sb.from('repairs').select('*').gte('date',from).lte('date',to).order('date');})]);
+    var t={};VK.forEach(function(v){t[v]={income:0,fuel:0,driver:0,repair:0,hours:0};});
+    res[0].forEach(function(e){var x=t[e.veku];if(!x)return;x.income+=entryIncome(e);x.fuel+=+e.fuel_cost||0;x.driver+=+e.driver_wage||0;x.hours+=+e.hours||0;});
+    S.sitePays.forEach(function(p){if(p.date<from||p.date>to)return;VK.forEach(function(v){t[v].income+=unpricedPayShare(p,v);});});
+    res[1].forEach(function(x){if(t[x.veku])t[x.veku].repair+=+x.amount||0;});
+    VK.forEach(function(v){var x=t[v];x.cost=x.fuel+x.driver+x.repair;x.net=x.income-x.cost;});
+    S.season={from:from,to:to,t:t};
+  }catch(e){S.season=null;toast(errText(e));}
+  render();
+}
+function seasonHTML(cashBal){
+  var r=seasonDefaults();
+  var h='<section class="panel"><div class="panel-head"><h2>সিজনের হিসাব ও মালিকদের ভাগ</h2><p class="hint">কাজ বা সিজন শেষে কে কত পাবেন। তারিখ বেছে "হিসাব করুন" চাপুন।</p></div>'+
+    '<div class="grid2"><label class="field"><span>শুরু</span><input type="date" id="seaFrom" data-sea="from" value="'+esc(r[0])+'"></label><label class="field"><span>শেষ</span><input type="date" id="seaTo" data-sea="to" value="'+esc(r[1])+'"></label></div>'+
+    '<div class="actions"><button type="button" class="btn primary" data-act="season-calc">হিসাব করুন</button></div>';
+  var s=S.season;
+  if(s&&s.loading)return h+'<p class="muted">হিসাব হচ্ছে…</p></section>';
+  if(!s||!s.t||s.from!==r[0]||s.to!==r[1])return h+'</section>';
+  var t=s.t,net=t.v1.net+t.v2.net;
+  h+='<p class="eyebrow">'+DFY.format(toDate(s.from))+' থেকে '+DFY.format(toDate(s.to))+'</p>'+
+    '<dl class="facts">'+VK.map(function(v){return '<div><dt>'+esc(vName(v))+' · আয় '+tk(t[v].income)+', খরচ '+tk(t[v].cost)+'</dt><dd class="'+(t[v].net<0?'neg':'pos')+'">'+(t[v].net<0?'লোকসান ':'লাভ ')+tka(t[v].net)+'</dd></div>';}).join('')+
+    '<div><dt><b>মোট '+netWord(net)+'</b></dt><dd class="'+(net<0?'neg':'pos')+'"><b>'+tka(net)+'</b></dd></div></dl>';
+  var rows='',totRemain=0;
+  S.settings.owners.forEach(function(o){
+    var share=t.v1.net*o.s1/100+t.v2.net*o.s2/100,x=ownerTxSum(o.id,s.from,s.to),taken=x.take-x.give,remain=share-taken;totRemain+=remain;
+    rows+='<tr><td>'+esc(o.name||'মালিক')+'<span class="by">'+DIG(o.s1)+'% · '+DIG(o.s2)+'%</span></td><td class="n '+(share<0?'neg':'')+'">'+amt(Math.abs(share))+'</td><td class="n">'+amt(taken)+'</td><td class="n '+(remain<0?'neg':'pos')+'"><b>'+amt(Math.abs(remain))+'</b>'+(remain<0?'<span class="by">বেশি নিয়েছেন</span>':'')+'</td>'+
+      '<td>'+(remain>0?'<button type="button" class="btn small" data-seapay="'+esc(o.id)+'" data-amt="'+Math.round(remain)+'">দিলাম</button>':'')+'</td></tr>';
+  });
+  h+='<div class="tbl-wrap"><table class="khata stmt"><thead><tr><th>মালিক</th><th class="n">ভাগ (৳)</th><th class="n">নিয়েছেন (৳)</th><th class="n">বাকি পাবেন (৳)</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+    '<p class="hint">"নিয়েছেন" মানে এই তারিখের মধ্যে লেখা "টাকা নিলেন" থেকে "টাকা দিলেন" বাদ দিয়ে। "দিলাম" চাপলে সেই মালিকের নামে টাকা নেওয়া লেখা হবে।</p>';
+  var siteDueAll=sitesDueTotal(),shopDue=0,drvDue=0;
+  shopNames().forEach(function(n){var b=shopBal(n).bal;if(b>0)shopDue+=b;});
+  activeDrivers().forEach(function(d){var b=dBal(d.id).bal;if(b>0)drvDue+=b;});
+  var after=cashBal+siteDueAll-shopDue-drvDue;
+  h+='<dl class="facts">'+fact('এখন হাতে আছে',cashBal)+fact('সাইটগুলো থেকে আরও পাবেন',siteDueAll,'pos')+fact('দোকানে শোধ করতে হবে',shopDue)+fact('ড্রাইভারদের দিতে হবে',drvDue)+
+    '<div><dt><b>সব আদায় আর শোধের পর হাতে থাকবে</b></dt><dd class="'+(after<0?'neg':'pos')+'"><b>'+tka(after)+'</b></dd></div>'+
+    '<div><dt>মালিকদের মোট বাকি ভাগ</dt><dd>'+tka(totRemain)+'</dd></div></dl>'+
+    '<p class="hint">মালিকদের ভাগ দেওয়ার আগে সাইটের বাকি টাকা আদায় হয়েছে কি না দেখে নিন। হাতে না থাকলে আদায় হওয়ার পর দিন।</p>'+
+    '<div class="actions"><button type="button" class="btn ghost" data-act="season-close" id="seaClose">এই সিজন শেষ, পরের সিজন '+DFY.format(toDate(addDays(s.to,1)))+' থেকে</button></div>';
+  return h+'</section>';
 }
 
 /* ----- owner: owners & settings ----- */
@@ -657,7 +810,7 @@ function markOwnersDirty(){
 async function saveSettings(s){
   var body={vekus:s.vekus,owners:s.owners,diesel_rate:+s.diesel_rate||0,shops:s.shops};
   await q(sb.from('settings').update(body).eq('id',1));
-  S.settings=normSettings(body);
+  body.season_start=S.settings.season_start;S.settings=normSettings(body);
 }
 
 /* ----- driver side ----- */
@@ -797,7 +950,7 @@ function defaultDate(){
 }
 function openSheet(type,rec,ap,opts){
   opts=opts||{};
-  F.approve=ap||null;
+  F.approve=ap||null;F.rec=rec||null;
   if(ap){type='entry';rec=null;}
   F.id=rec?rec.id:null;F.delArmed=false;
   setType(type);
@@ -869,6 +1022,7 @@ async function submitSheet(ev){
   try{
     var created=false;
     if(col==='entries'&&newSite){var ns=await q(sb.from('sites').insert({name:newSite}).select('id').single());data.site_id=ns.id;created=true;}
+    if(col==='entries'){var rs=data.site_id?siteBy(data.site_id):null,orec=F.rec;data.rate=(orec&&orec.site_id===data.site_id&&+orec.rate>0)?+orec.rate:(rs&&rs.bill_type!=='contract'?(+rs.rate||0):0);}
     if(ap)await q(sb.rpc('approve_submission',{p_id:ap.id,p_entry:data}));
     else if(F.id)await q(sb.from(col).update(data).eq('id',F.id));
     else await q(sb.from(col).insert(data));
@@ -946,16 +1100,39 @@ function openMini(mode,o){
     title='দোকান বা পাম্প যোগ করুন';
     body='<label class="field"><span>দোকান বা পাম্পের নাম</span><input type="text" id="mName" autocomplete="off"></label>';
   }else if(mode==='site-new'||mode==='site-edit'){
-    var st=o.site||{};M.site=o.site||null;M.sstatus=st.status||'active';
+    var st=o.site||{};M.site=o.site||null;M.sstatus=st.status||'active';M.btype=st.bill_type||'hour';
     title=mode==='site-new'?'নতুন সাইট যোগ করুন':'সাইটের তথ্য বদলান';
     body='<label class="field"><span>সাইটের নাম</span><input type="text" id="mName" autocomplete="off" placeholder="যেমন: রহমানের পুকুর খনন" value="'+esc(st.name||'')+'"></label>'+
       '<div class="grid2"><label class="field"><span>মালিকপক্ষ <em>ইচ্ছা হলে</em></span><input type="text" id="mClient" autocomplete="off" value="'+esc(st.client||'')+'"></label>'+
       '<label class="field"><span>ফোন <em>ইচ্ছা হলে</em></span><input type="tel" id="mPhone" inputmode="tel" autocomplete="off" value="'+esc(st.phone||'')+'"></label></div>'+
       '<label class="field"><span>ঠিকানা বা জায়গা <em>ইচ্ছা হলে</em></span><input type="text" id="mAddr" autocomplete="off" value="'+esc(st.address||'')+'"></label>'+
-      '<label class="field"><span>প্রতি ঘণ্টার রেট (৳) <em>দিলে বিল আর পাওনা হিসাব হবে</em></span><input type="text" class="num" id="mRate" inputmode="decimal" autocomplete="off" placeholder="যেমন ২৮০০" value="'+esc(st.rate?shown(st.rate):'')+'"></label>'+
-      (mode==='site-edit'?'<fieldset class="field"><legend>কাজের অবস্থা</legend><div class="seg2" id="mStSeg"><button type="button" data-sst="active" aria-pressed="'+(M.sstatus!=='done')+'">চলমান</button><button type="button" data-sst="done" aria-pressed="'+(M.sstatus==='done')+'">শেষ হয়েছে</button></div><p class="hint">শেষ হওয়া সাইট হিসাব লেখার তালিকায় আর আসবে না, তবে তার হিসাব থেকে যাবে।</p></fieldset>':'')+
+      '<fieldset class="field"><legend>কাজের হিসাব কীভাবে</legend><div class="seg2" id="mBillSeg"><button type="button" data-bt="hour" aria-pressed="'+(M.btype!=='contract')+'">ঘণ্টা হিসাবে</button><button type="button" data-bt="contract" aria-pressed="'+(M.btype==='contract')+'">চুক্তিতে (মোট টাকা)</button></div></fieldset>'+
+      '<div id="mHourWrap"'+(M.btype==='contract'?' hidden':'')+' class="grp"><label class="field"><span>প্রতি ঘণ্টার রেট (৳)</span><input type="text" class="num" id="mRate" inputmode="decimal" autocomplete="off" placeholder="যেমন ১৬০০" value="'+esc(st.rate?shown(st.rate):'')+'"></label>'+
+        (mode==='site-edit'&&+st.rate>0?'<label class="check"><input type="checkbox" id="mApplyOld"> <span>রেট বদলালে আগের কাজেও নতুন রেট ধরুন। টিক না দিলে আগের কাজ আগের রেটেই থাকবে।</span></label>':'')+'</div>'+
+      '<label class="field" id="mContractWrap"'+(M.btype==='contract'?'':' hidden')+'><span>চুক্তির মোট টাকা (৳)</span><input type="text" class="num" id="mContract" inputmode="decimal" autocomplete="off" value="'+esc(st.contract_amount?shown(st.contract_amount):'')+'"></label>'+
+      (mode==='site-edit'?'<label class="field"><span>ছাড় দিয়েছেন (৳) <em>শেষে কম নিলে</em></span><input type="text" class="num" id="mDisc" inputmode="decimal" autocomplete="off" value="'+esc(st.discount?shown(st.discount):'')+'"></label>'+
+        '<fieldset class="field"><legend>কাজের অবস্থা</legend><div class="seg2" id="mStSeg"><button type="button" data-sst="active" aria-pressed="'+(M.sstatus!=='done')+'">চলমান</button><button type="button" data-sst="done" aria-pressed="'+(M.sstatus==='done')+'">শেষ হয়েছে</button></div><p class="hint">শেষ হওয়া সাইট হিসাব লেখার তালিকায় আর আসবে না, তবে তার হিসাব থেকে যাবে।</p></fieldset>':'')+
       '<label class="field"><span>নোট <em>ইচ্ছা হলে</em></span><input type="text" id="mNote" autocomplete="off" value="'+esc(st.notes||'')+'"></label>';
     if(mode==='site-edit'&&!siteSum(st.id).n)del='সাইট মুছে ফেলুন';
+  }else if(mode==='site-pay'){
+    var sp=o.site;M.site=sp;M.rec=o.rec||null;
+    title=sp.name+' থেকে টাকা পেলাম';
+    body=(sitePriced(sp)?'<p class="from">এখন বাকি: '+tka(siteDue(sp))+'</p>':'')+payFields(o.rec)+'<p class="hint">কোনো ভেকুর দৈনিক হিসাবের সঙ্গে না লিখে সরাসরি সাইটের নামে টাকা পাওয়া লিখুন। টাকাটা "ক্যাশ ও মালিক" পাতায় আপনার হাতে যোগ হবে।</p>';
+    if(o.rec)del='মুছে ফেলুন';
+  }else if(mode==='site-settle'){
+    var ss=o.site;M.site=ss;var dd=siteDue(ss);
+    title=ss.name+'-এর হিসাব মেটান';save='হিসাব মেটান';
+    body='<dl class="facts">'+fact(ss.bill_type==='contract'?'চুক্তির টাকা':'বিল',siteGross(ss))+(+ss.discount>0?fact('আগে ছাড়',+ss.discount):'')+fact('পেয়েছেন',siteReceived(ss))+fact('বাকি',dd,'neg')+'</dl>'+
+      '<label class="field"><span>কত টাকা ছাড় দিলেন (৳)</span><input type="text" class="num key" id="mAmount" inputmode="decimal" autocomplete="off" value="'+esc(shown(Math.round(dd)))+'"></label>'+
+      '<label class="check"><input type="checkbox" id="mDone" checked> <span>সাইটের কাজ শেষ, তালিকা থেকে সরিয়ে রাখুন</span></label>'+
+      '<p class="hint">বাকি টাকা আর পাবেন না, এমন হলে এখানে ছাড় লিখুন। ছাড় লাভ থেকে বাদ যাবে, আর সাইটের বাকি শূন্য হবে।</p>';
+  }else if(mode==='owner-tx'){
+    var ox=o.rec||null;M.rec=ox;M.okind=ox?ox.kind:(o.kind||'take');M.oid=ox?ox.owner_id:o.ownerId;
+    title=ownerName(M.oid)+(ox?' · লেনদেন বদলান':'');
+    body='<fieldset class="field"><legend>কী হলো</legend><div class="seg2" id="mOkSeg"><button type="button" data-okind="take" aria-pressed="'+(M.okind==='take')+'">ব্যবসা থেকে টাকা নিলেন</button><button type="button" data-okind="give" aria-pressed="'+(M.okind==='give')+'">ব্যবসায় টাকা দিলেন</button></div></fieldset>'+
+      '<div class="grid2"><label class="field"><span>তারিখ</span><input type="date" id="mDate" value="'+esc(ox?ox.date:todayISO())+'"></label><label class="field"><span>কত টাকা</span><input type="text" class="num key" id="mAmount" inputmode="decimal" autocomplete="off" placeholder="৳" value="'+esc(ox?shown(ox.amount):(o.amount?shown(o.amount):''))+'"></label></div>'+
+      '<label class="field"><span>নোট <em>ইচ্ছা হলে</em></span><input type="text" id="mNote" autocomplete="off" value="'+esc(ox?ox.note||'':(o.note||''))+'"></label>';
+    if(ox)del='মুছে ফেলুন';
   }else if(mode==='my-password'){
     title='আপনার পাসওয়ার্ড বদলান';save='বদলান';
     body='<label class="field"><span>নতুন পাসওয়ার্ড <em>কমপক্ষে ৬ অক্ষর</em></span><span class="pw"><input type="password" id="mPass" autocomplete="new-password"><button type="button" data-pw="mPass">দেখুন</button></span></label>';
@@ -1037,11 +1214,45 @@ async function submitMini(ev){
     }else if(mode==='site-new'||mode==='site-edit'){
       var sn=$('#mName').value.trim();if(!sn)return mErr('সাইটের নাম লিখুন।');
       var dup=siteByName(sn);if(dup&&(!M.site||dup.id!==M.site.id))return mErr('এই নামে আগেই একটি সাইট আছে।');
-      var rec2={name:sn,client:$('#mClient').value.trim(),phone:$('#mPhone').value.trim(),address:$('#mAddr').value.trim(),rate:num($('#mRate').value),notes:$('#mNote').value.trim()};
-      if(mode==='site-edit')rec2.status=M.sstatus;
+      var old=M.site||{},bt=M.btype;
+      var rec2={name:sn,client:$('#mClient').value.trim(),phone:$('#mPhone').value.trim(),address:$('#mAddr').value.trim(),notes:$('#mNote').value.trim(),bill_type:bt,
+        rate:bt==='hour'?num($('#mRate').value):(+old.rate||0),contract_amount:bt==='contract'?num($('#mContract').value):(+old.contract_amount||0)};
+      if(bt==='contract'&&!(rec2.contract_amount>0))return mErr('চুক্তির মোট টাকা লিখুন।');
+      if(mode==='site-edit'){rec2.status=M.sstatus;rec2.discount=num($('#mDisc').value);}
       busy();
-      if(mode==='site-new')await q(sb.from('sites').insert(rec2));else await q(sb.from('sites').update(rec2).eq('id',M.site.id));
-      await reloadSites();toast(mode==='site-new'?'সাইট যোগ হয়েছে':'সাইটের তথ্য বদলানো হয়েছে');
+      if(mode==='site-new')await q(sb.from('sites').insert(rec2));
+      else{
+        var oldRate=+old.rate||0;
+        if(bt==='hour'&&rec2.rate!==oldRate){
+          var ap=$('#mApplyOld');
+          if(ap&&ap.checked)await q(sb.from('entries').update({rate:rec2.rate}).eq('site_id',old.id));
+          else if(oldRate>0)await q(sb.from('entries').update({rate:oldRate}).eq('site_id',old.id).eq('rate',0));
+        }
+        await q(sb.from('sites').update(rec2).eq('id',old.id));
+      }
+      await Promise.all([reloadSites(),reloadBal(),reloadYear()]);toast(mode==='site-new'?'সাইট যোগ হয়েছে':'সাইটের তথ্য বদলানো হয়েছে');
+    }else if(mode==='site-pay'){
+      var pd=$('#mDate').value,pa=num($('#mAmount').value);
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(pd))return mErr('তারিখ দিন।');
+      if(!(pa>0))return mErr('কত টাকা পেলেন, লিখুন।');
+      busy();
+      var pr={date:pd,amount:pa,note:$('#mNote').value.trim()};
+      if(M.rec)await q(sb.from('site_payments').update(pr).eq('id',M.rec.id));else{pr.site_id=M.site.id;await q(sb.from('site_payments').insert(pr));}
+      await Promise.all([reloadSitePays(),reloadBal()]);toast('টাকা পাওয়া লেখা হয়েছে');
+    }else if(mode==='site-settle'){
+      var da=num($('#mAmount').value);if(da<0)return mErr('ছাড়ের টাকা ঠিক নেই।');
+      busy();
+      var up={discount:(+M.site.discount||0)+da};if($('#mDone').checked)up.status='done';
+      await q(sb.from('sites').update(up).eq('id',M.site.id));
+      await Promise.all([reloadSites(),reloadBal()]);toast('হিসাব মেটানো হয়েছে');
+    }else if(mode==='owner-tx'){
+      var od=$('#mDate').value,oa=num($('#mAmount').value);
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(od))return mErr('তারিখ দিন।');
+      if(!(oa>0))return mErr('কত টাকা, লিখুন।');
+      busy();
+      var orc={date:od,amount:oa,kind:M.okind,note:$('#mNote').value.trim()};
+      if(M.rec)await q(sb.from('owner_tx').update(orc).eq('id',M.rec.id));else{orc.owner_id=M.oid;await q(sb.from('owner_tx').insert(orc));}
+      await reloadOwnerTx();toast(M.okind==='take'?'টাকা নেওয়া লেখা হয়েছে':'টাকা দেওয়া লেখা হয়েছে');
     }else if(mode==='my-password'){
       var pw4=$('#mPass').value;if(pw4.length<6)return mErr('পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের দিন।');
       busy();var r=await sb.auth.updateUser({password:pw4});if(r.error)throw r.error;toast('পাসওয়ার্ড বদলানো হয়েছে');
@@ -1055,7 +1266,9 @@ async function delMini(){
   if(!M.delArmed){M.delArmed=true;b.textContent='নিশ্চিত? '+M.delText;b.classList.add('armed');setTimeout(function(){if(M.delArmed){M.delArmed=false;b.textContent=M.delText;b.classList.remove('armed');}},4000);return;}
   b.disabled=true;
   try{
-    if(M.mode==='site-edit'){await q(sb.from('sites').delete().eq('id',M.site.id));await reloadSites();if(S.openSite===M.site.id)S.openSite=null;toast('সাইট মুছে ফেলা হয়েছে');}
+    if(M.mode==='site-pay'){await q(sb.from('site_payments').delete().eq('id',M.rec.id));await Promise.all([reloadSitePays(),reloadBal()]);toast('মুছে ফেলা হয়েছে');}
+    else if(M.mode==='owner-tx'){await q(sb.from('owner_tx').delete().eq('id',M.rec.id));await reloadOwnerTx();toast('মুছে ফেলা হয়েছে');}
+    else if(M.mode==='site-edit'){await q(sb.from('sites').delete().eq('id',M.site.id));await reloadSites();if(S.openSite===M.site.id)S.openSite=null;toast('সাইট মুছে ফেলা হয়েছে');}
     else if(M.mode==='driver-edit'){await q(sb.from('drivers').update({active:false}).eq('id',M.driver.id));await reloadDrivers();toast('তালিকা থেকে সরানো হয়েছে');}
     else if(M.mode==='pay-driver'){await q(sb.from('driver_payments').delete().eq('id',M.rec.id));await reloadBal();toast('মুছে ফেলা হয়েছে');}
     else if(M.mode==='pay-shop'){await q(sb.from('shop_payments').delete().eq('id',M.rec.id));await reloadBal();toast('মুছে ফেলা হয়েছে');}
@@ -1156,6 +1369,8 @@ document.addEventListener('click',function(e){
   var t=e.target,x;
   if(t.closest('#sheet'))return;
   if((x=t.closest('#mini [data-w]'))){M.wage=x.dataset.w;document.querySelectorAll('#mWageSeg button').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.w===M.wage));});var rw=$('#mRateWrap');if(rw){rw.hidden=M.wage==='manual';$('#mRateLbl').textContent=M.wage==='day'?'প্রতি দিন কত টাকা':'প্রতি ঘণ্টা কত টাকা';}return;}
+  if((x=t.closest('#mini [data-bt]'))){M.btype=x.dataset.bt;document.querySelectorAll('#mBillSeg button').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.bt===M.btype));});$('#mHourWrap').hidden=M.btype==='contract';$('#mContractWrap').hidden=M.btype!=='contract';return;}
+  if((x=t.closest('#mini [data-okind]'))){M.okind=x.dataset.okind;document.querySelectorAll('#mOkSeg button').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.okind===M.okind));});return;}
   if((x=t.closest('#mini [data-sst]'))){M.sstatus=x.dataset.sst;document.querySelectorAll('#mStSeg button').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.sst===M.sstatus));});return;}
   if((x=t.closest('#mini [data-genpw]'))){var inp=document.getElementById(x.dataset.genpw);if(inp)inp.value=genPw();return;}
   if((x=t.closest('#mini [data-mgo]'))){openMini(x.dataset.mgo,{driver:M.driver});return;}
@@ -1168,16 +1383,24 @@ document.addEventListener('click',function(e){
     else if(act==='reload')location.reload();
     else if(act==='retry')enter();
     else if(act==='refresh'){if(S.role==='owner')refreshPending().then(render);else loadDriver().then(render).catch(function(err){toast(errText(err));});}
-    else if(act==='add-owner'){S.ownersDraft.owners.push({name:'',s1:0,s2:0});S.ownersDirty=true;renderOwnersPanel();var n=$('#o-name-'+(S.ownersDraft.owners.length-1));if(n)n.focus();}
+    else if(act==='add-owner'){S.ownersDraft.owners.push({id:uid(),name:'',s1:0,s2:0});S.ownersDirty=true;renderOwnersPanel();var n=$('#o-name-'+(S.ownersDraft.owners.length-1));if(n)n.focus();}
     else if(act==='reset-owners'){S.ownersDraft=null;S.ownersDirty=false;render();}
     else if(act==='save-owners')saveOwners(a);
     else if(act==='add-driver')openMini('driver-new',{});
     else if(act==='add-shop')openMini('shop-new',{});
     else if(act==='add-site')openMini('site-new',{});
+    else if(act==='season-calc')calcSeason();
+    else if(act==='season-close')closeSeason(a);
     else if(act==='my-password')openMini('my-password',{});
     else if(act==='my-stmt'){S.openMine=!S.openMine;render();}
     return;
   }
+  if((x=t.closest('[data-sitepay]'))){openMini('site-pay',{site:siteBy(x.dataset.sitepay)});return;}
+  if((x=t.closest('[data-sitesettle]'))){openMini('site-settle',{site:siteBy(x.dataset.sitesettle)});return;}
+  if((x=t.closest('tr[data-spx]'))){var spr=S.sitePays.filter(function(y){return y.id===x.dataset.spx;})[0];if(spr)openMini('site-pay',{site:siteBy(spr.site_id),rec:spr});return;}
+  if((x=t.closest('[data-otx]'))){openMini('owner-tx',{ownerId:x.dataset.otx,kind:x.dataset.kind});return;}
+  if((x=t.closest('tr[data-otxe]'))){var otr=S.ownerTx.filter(function(y){return y.id===x.dataset.otxe;})[0];if(otr)openMini('owner-tx',{rec:otr});return;}
+  if((x=t.closest('[data-seapay]'))){openMini('owner-tx',{ownerId:x.dataset.seapay,kind:'take',amount:+x.dataset.amt,note:'সিজনের ভাগ'});return;}
   if((x=t.closest('[data-siteopen]'))){var sid=x.dataset.siteopen;S.openSite=S.openSite===sid?null:sid;render();return;}
   if((x=t.closest('[data-siteadd]'))){openSheet('entry',null,null,{siteId:x.dataset.siteadd});return;}
   if((x=t.closest('[data-siteedit]'))){openMini('site-edit',{site:siteBy(x.dataset.siteedit)});return;}
@@ -1218,17 +1441,26 @@ document.addEventListener('keydown',function(e){
   else if(t.matches('tr[data-month]')){e.preventDefault();S.month=+t.dataset.month;render();}
   else if(t.matches('tr[data-sitego]')){e.preventDefault();siteGo(t.dataset.sitego);}
   else if(t.matches('tr[data-sentry]')){e.preventDefault();sentryOpen(t);}
+  else if(t.matches('tr[data-spx],tr[data-otxe]')){e.preventDefault();t.click();}
 });
 $('#main').addEventListener('input',function(e){if(e.target&&e.target.dataset&&e.target.dataset.apdep)S.apDep[e.target.dataset.apdep]=e.target.value;});
+$('#main').addEventListener('change',function(e){var d=e.target&&e.target.dataset&&e.target.dataset.sea;if(d==='from')S.seasonFrom=e.target.value;else if(d==='to')S.seasonTo=e.target.value;});
 $('#main').addEventListener('input',function(e){
   var el=e.target,d=S.ownersDraft;if(!d||S.tab!=='owners')return;
   if(el.dataset.k){var o=d.owners[+el.dataset.i];if(!o)return;o[el.dataset.k]=el.dataset.k==='name'?el.value:num(el.value);markOwnersDirty();}
   else if(el.dataset.vn){d.vekus[el.dataset.vn].name=el.value;markOwnersDirty();}
   else if(el.dataset.rate){d.diesel_rate=num(el.value);markOwnersDirty();}
 });
+async function closeSeason(btn){
+  if(!S.season||!S.season.to)return;
+  if(!btn.classList.contains('armed')){btn.classList.add('armed');btn.dataset.t=btn.textContent;btn.textContent='নিশ্চিত? সিজন শেষ করুন';setTimeout(function(){if(btn.isConnected){btn.classList.remove('armed');btn.textContent=btn.dataset.t;}},4000);return;}
+  var next=addDays(S.season.to,1);btn.disabled=true;
+  try{await q(sb.from('settings').update({season_start:next}).eq('id',1));S.settings.season_start=next;S.seasonFrom='';S.seasonTo='';S.season=null;toast('নতুন সিজন '+DFY.format(toDate(next))+' থেকে শুরু');render();}
+  catch(e){btn.disabled=false;toast(errText(e));}
+}
 async function saveOwners(btn){
   var d=clone(S.ownersDraft);
-  d.owners=d.owners.map(function(o,i){return {name:(o.name||'').trim()||('মালিক '+DIG(i+1)),s1:+o.s1||0,s2:+o.s2||0};});
+  d.owners=d.owners.map(function(o,i){return {id:o.id||uid(),name:(o.name||'').trim()||('মালিক '+DIG(i+1)),s1:+o.s1||0,s2:+o.s2||0};});
   VK.forEach(function(v){d.vekus[v].name=(d.vekus[v].name||'').trim()||('ভেকু '+PLATE[v]);});
   d.shops=S.settings.shops.slice();
   btn.disabled=true;btn.textContent='সংরক্ষণ হচ্ছে…';
