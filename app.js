@@ -109,7 +109,7 @@ async function reloadDrivers(){S.drivers=await qDrivers()||[];}
 async function reloadSettings(){S.settings=normSettings(await qSettings());}
 async function loadDriver(){
   var r=await Promise.all([q(sb.rpc('my_account')),q(sb.rpc('pub_info')),q(sb.from('submissions').select('*').order('created_at',{ascending:false}).limit(40))]);
-  S.acct=r[0];S.pub={vekus:normVekus(r[1]&&r[1].vekus),shops:normShops(r[1]&&r[1].shops),sites:(r[1]&&Array.isArray(r[1].sites))?r[1].sites:[]};S.mine=r[2]||[];
+  S.acct=r[0];S.pub={vekus:normVekus(r[1]&&r[1].vekus),shops:normShops(r[1]&&r[1].shops),diesel_rate:+(r[1]&&r[1].diesel_rate)||0,sites:(r[1]&&Array.isArray(r[1].sites))?r[1].sites:[]};S.mine=r[2]||[];
 }
 
 /* ---------- boot & auth ---------- */
@@ -353,7 +353,8 @@ function sumHTML(){
 /* ----- owner: approvals ----- */
 function fuelLine(x){
   if(!(+x.litres>0)&&!x.fuel_src)return '';
-  return '<p class="fuelline">ডিজেল: '+q1(x.litres)+' লিটার'+(x.fuel_src?' · '+esc(x.fuel_src):'')+(+x.fuel_cost?' · '+tk(x.fuel_cost):'')+(x.fuel_pay?' <span class="st '+x.fuel_pay+'">'+PAYL[x.fuel_pay]+'</span>':'')+'</p>';
+  var rate=+x.litres>0&&+x.fuel_cost>0?Math.round(x.fuel_cost/x.litres*100)/100:0;
+  return '<p class="fuelline">ডিজেল'+(x.fuel_src?' ('+esc(x.fuel_src)+')':'')+': '+q1(x.litres)+' লিটার'+(rate?' × '+tk(rate)+' = <b>'+tk(x.fuel_cost)+'</b>':(+x.fuel_cost?' · '+tk(x.fuel_cost):''))+(x.fuel_pay?' <span class="st '+x.fuel_pay+'">'+PAYL[x.fuel_pay]+'</span>':' <span class="st pending">নগদ না বাকি, আপনি বাছবেন</span>')+'</p>';
 }
 function approveHTML(){
   var list=S.pending.slice().sort(byDate);
@@ -607,8 +608,8 @@ var STL={pending:'অপেক্ষায়',approved:'অনুমোদি�
 function driverTopHTML(){
   var a=S.acct;if(!a)return '';
   var d=a.driver||{},earned=+a.earned||0,paid=+a.paid||0,bal=earned-paid,open=S.openMine;
-  return '<section class="panel"><div class="panel-head"><p class="eyebrow">'+esc(d.name||'')+' · আপনার টাকার হিসাব</p><h2>'+(bal<0?'বেশি নিয়েছেন ':'বাকি পাবেন ')+'<span class="'+(bal<0?'neg':'pos')+'">'+tk(Math.abs(bal))+'</span></h2><p class="hint">'+wageText(d)+'। আজ পর্যন্ত সব মিলিয়ে।</p></div>'+
-    '<div class="kv3"><div><span>মজুরি হয়েছে</span><b>'+tk(earned)+'</b></div><div><span>নিয়েছেন</span><b>'+tk(paid)+'</b></div><div><span>'+(bal<0?'বেশি নিয়েছেন':'বাকি পাবেন')+'</span><b>'+tk(Math.abs(bal))+'</b></div></div>'+
+  return '<section class="panel"><div class="panel-head"><p class="dname">'+esc(d.name||'')+'</p><p class="eyebrow">আপনার টাকার হিসাব · '+wageText(d)+'</p><h2 class="dbal">'+(bal<0?'বেশি নিয়েছেন ':'বাকি পাবেন ')+'<span class="'+(bal<0?'neg':'pos')+'">'+tk(Math.abs(bal))+'</span></h2><p class="hint">আজ পর্যন্ত সব মিলিয়ে।</p></div>'+
+    '<div class="kv3"><div><span>মজুরি হয়েছে</span><b>'+tk(earned)+'</b></div><div><span>নিয়েছেন</span><b>'+tk(paid)+'</b></div><div><span>মোট কাজ</span><b>'+q1(a.hours)+' ঘণ্টা</b></div></div>'+
     '<button type="button" class="linkbtn" data-act="my-stmt">'+(open?'লেনদেন লুকান':'সব লেনদেন দেখুন')+'</button>'+
     (open?stmtTable(driverStmtRows(a.statement||[]),['মজুরি (৳)','নিয়েছেন (৳)'],null):'')+
     (d.active===false?'<p class="note">মালিক আপনাকে ড্রাইভারের তালিকা থেকে সরিয়েছেন, তাই নতুন হিসাব পাঠানো যাবে না।</p>':'')+
@@ -621,7 +622,7 @@ function driverListHTML(){
   else h+='<ul class="dlist">'+S.mine.map(function(r){
     var st=r.status||'pending',ck=st==='pending'&&a.driver&&a.driver.active!==false;
     return '<li class="ditem'+(ck?' click':'')+'"'+(ck?' tabindex="0" data-mine="'+esc(r.id)+'"':'')+'>'+plate(r.veku)+
-      '<div><div class="dd">'+fullDate(r.date)+'</div><div class="df">'+(siteName(r)?esc(siteName(r))+' · ':'')+q1(r.hours)+' ঘণ্টা'+(+r.litres>0?' · ডিজেল '+q1(r.litres)+' লিটার'+(r.fuel_src?' ('+esc(r.fuel_src)+(r.fuel_pay?', '+PAYL[r.fuel_pay]:'')+')':''):'')+(r.remarks?' · '+esc(r.remarks):'')+'</div></div>'+
+      '<div><div class="dd">'+fullDate(r.date)+'</div><div class="df">'+(siteName(r)?esc(siteName(r))+' · ':'')+q1(r.hours)+' ঘণ্টা'+(+r.litres>0?' · ডিজেল '+q1(r.litres)+' লিটার'+(+r.fuel_cost?' = '+tk(r.fuel_cost):'')+(r.fuel_src?' ('+esc(r.fuel_src)+')':''):'')+(r.remarks?' · '+esc(r.remarks):'')+'</div></div>'+
       '<span class="st '+st+'">'+(STL[st]||st)+'</span></li>';
   }).join('')+'</ul>';
   return h+'<button type="button" class="linkbtn" data-act="refresh">নতুন করে দেখুন</button></section>';
@@ -629,7 +630,14 @@ function driverListHTML(){
 function drvVekuSeg(){
   $('#dVekuSeg').innerHTML=VK.map(function(x){return '<button type="button" class="'+x+'" data-dv="'+x+'" aria-pressed="'+(x===D.veku)+'">'+plate(x)+'<span>'+esc(vName(x))+'</span></button>';}).join('');
 }
-function setDPay(p){D.pay=p;document.querySelectorAll('#dPaySeg button').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.pay===p));});}
+function dFuelCalc(){
+  var l=num($('#dLitres').value),r=num($('#dRate').value),out=$('#dFuelTotal');
+  if(l>0&&r>0){out.hidden=false;out.innerHTML=q1(l)+' লিটার × '+tk(r)+' = <b>'+tk(Math.round(l*r))+'</b>';}else out.hidden=true;
+}
+function lastDRate(){
+  for(var i=0;i<S.mine.length;i++){var m=S.mine[i];if(+m.litres>0&&+m.fuel_cost>0)return Math.round(m.fuel_cost/m.litres*100)/100;}
+  return +S.pub.diesel_rate||0;
+}
 function resetDrv(rec){
   D.id=rec?rec.id:null;D.delArmed=false;
   D.veku=rec?rec.veku:((S.mine[0]&&S.mine[0].veku)||D.veku||'v1');
@@ -639,9 +647,9 @@ function resetDrv(rec){
   $('#dDate').value=rec?rec.date:todayISO();
   $('#dHours').value=rec?shown(rec.hours):'';
   $('#dLitres').value=rec?shown(rec.litres):'';
-  $('#dFuel').value=rec?shown(rec.fuel_cost):'';
   $('#dSrc').value=rec?(rec.fuel_src||''):'';
-  setDPay(rec?(rec.fuel_pay||''):'');
+  var rr=rec&&+rec.litres>0&&+rec.fuel_cost>0?Math.round(rec.fuel_cost/rec.litres*100)/100:lastDRate();
+  $('#dRate').value=rr?shown(rr):'';dFuelCalc();
   $('#dRemarks').value=rec?(rec.remarks||''):'';
   $('#drvTitle').textContent=rec?'পাঠানো হিসাব বদলান':'আজকের কাজ লিখুন';
   $('#dSave').textContent=rec?'বদলে পাঠান':'পাঠিয়ে দিন';
@@ -659,14 +667,16 @@ async function submitDrv(ev){
   ev.preventDefault();
   var date=$('#dDate').value;
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return dErr('তারিখ দিন।');
-  var hours=num($('#dHours').value),litres=num($('#dLitres').value),fuel=num($('#dFuel').value),src=$('#dSrc').value.trim();
+  var hours=num($('#dHours').value),litres=num($('#dLitres').value),fuel=0,src=$('#dSrc').value.trim();
   if(!(hours>0)&&!(litres>0))return dErr('কত ঘণ্টা চালিয়েছেন, অথবা কত লিটার ডিজেল নিয়েছেন লিখুন।');
   if(litres>0&&!src)return dErr('কোন দোকান বা পাম্প থেকে ডিজেল নিয়েছেন লিখুন।');
-  if(litres>0&&!D.pay)return dErr('ডিজেলের টাকা নগদ দিয়েছেন, না বাকিতে নিয়েছেন বাছুন।');
+  var rate=num($('#dRate').value);
+  if(litres>0&&!(rate>0))return dErr('ডিজেলের দর লিখুন, প্রতি লিটার কত টাকা।');
+  fuel=litres>0?Math.round(litres*rate):0;
   var dsel=$('#dSiteSel').value,dnew=$('#dSiteNew').value.trim();
   if(dsel==='__new'&&!dnew)return dErr('সাইটের নাম লিখুন।');
   if(hours>0&&!dsel)return dErr('কোন সাইটে কাজ করেছেন বাছুন। তালিকায় না থাকলে "তালিকায় নেই" বেছে নাম লিখুন।');
-  var data={veku:D.veku,date:date,site_id:dsel&&dsel!=='__new'?dsel:null,site_name:dsel==='__new'?dnew:'',hours:hours,litres:litres,fuel_cost:litres>0?fuel:0,fuel_src:litres>0?src:'',fuel_pay:litres>0?D.pay:'',remarks:$('#dRemarks').value.trim()};
+  var data={veku:D.veku,date:date,site_id:dsel&&dsel!=='__new'?dsel:null,site_name:dsel==='__new'?dnew:'',hours:hours,litres:litres,fuel_cost:fuel,fuel_src:litres>0?src:'',fuel_pay:'',remarks:$('#dRemarks').value.trim()};
   var b=$('#dSave'),wasEdit=!!D.id;b.disabled=true;b.textContent='পাঠানো হচ্ছে…';
   try{
     if(D.id){
@@ -784,6 +794,7 @@ async function submitSheet(ev){
       deposit:num($('#fDeposit').value),driver_wage:num($('#fDriver').value),driver_id:$('#fDrvSel').value||null,remarks:$('#fRemarks').value.trim()};
     if(ap&&$('#fDeposit').value.trim()==='')return showErr('সাইট থেকে কত টাকা জমা হয়েছে লিখুন। কিছু না পেলে ০ লিখুন।');
     if(!(data.hours||data.litres||data.fuel_cost||data.deposit||data.driver_wage))return showErr('অন্তত একটি ঘর পূরণ করুন: ঘণ্টা, ডিজেল, জমা বা ড্রাইভারের মজুরি।');
+    if(data.fuel_cost>0&&!data.fuel_pay)return showErr('ডিজেলের টাকা নগদ দেওয়া হয়েছে, না বাকি আছে, বাছুন।');
     if(data.fuel_pay==='due'&&!data.fuel_src)return showErr('কোন দোকান থেকে বাকিতে ডিজেল নেওয়া হয়েছে লিখুন।');
     if(data.fuel_pay==='due'&&!(data.fuel_cost>0))return showErr('বাকিতে নেওয়া ডিজেলের টাকা লিখুন, তা না হলে দোকানের বাকি হিসাব হবে না।');
     if(data.driver_wage>0&&!data.driver_id)return showErr('মজুরি কোন ড্রাইভারের, বেছে নিন। তালিকায় না থাকলে "ড্রাইভার" পাতায় আগে যোগ করুন।');
@@ -1208,7 +1219,8 @@ $('#mDel').addEventListener('click',delMini);
 /* driver form events */
 $('#dSiteSel').addEventListener('change',function(){var isNew=this.value==='__new';$('#dSiteNewWrap').hidden=!isNew;if(isNew)setTimeout(function(){$('#dSiteNew').focus();},30);});
 $('#dVekuSeg').addEventListener('click',function(e){var b=e.target.closest('[data-dv]');if(b){D.veku=b.dataset.dv;drvVekuSeg();}});
-$('#dPaySeg').addEventListener('click',function(e){var b=e.target.closest('[data-pay]');if(b)setDPay(D.pay===b.dataset.pay?'':b.dataset.pay);});
+$('#dLitres').addEventListener('input',dFuelCalc);
+$('#dRate').addEventListener('input',dFuelCalc);
 $('#drvForm').addEventListener('submit',submitDrv);
 $('#dCancel').addEventListener('click',function(){resetDrv(null);});
 $('#dDel').addEventListener('click',async function(){

@@ -367,3 +367,31 @@ revoke execute on function public.site_summary() from public, anon;
 grant execute on function public.site_summary() to authenticated;
 revoke execute on function public.pub_info() from public, anon;
 grant execute on function public.pub_info() to authenticated;
+
+-- ===== driver total hours and default diesel rate (added later) =====
+create or replace function public.my_account() returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare d public.drivers;
+begin
+  select * into d from public.drivers where user_id = (select auth.uid()) limit 1;
+  if not found then return null; end if;
+  return jsonb_build_object(
+    'driver', to_jsonb(d) - 'user_id',
+    'earned', coalesce((select sum(e.driver_wage) from public.entries e where e.driver_id = d.id), 0),
+    'paid', coalesce((select sum(p.amount) from public.driver_payments p where p.driver_id = d.id), 0),
+    'hours', coalesce((select sum(e.hours) from public.entries e where e.driver_id = d.id), 0),
+    'statement', public.driver_statement(d.id)
+  );
+end $$;
+
+create or replace function public.pub_info() returns jsonb
+language sql stable security definer set search_path = '' as $$
+  select jsonb_build_object(
+    'vekus', s.vekus,
+    'shops', to_jsonb(s.shops),
+    'diesel_rate', s.diesel_rate,
+    'sites', coalesce((select jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name) order by t.name) from public.sites t where t.status = 'active'), '[]'::jsonb)
+  ) from public.settings s where s.id = 1;
+$$;
+revoke execute on function public.pub_info(), public.my_account() from public, anon;
+grant execute on function public.pub_info(), public.my_account() to authenticated;
