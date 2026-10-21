@@ -10,19 +10,23 @@ var EXC='<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width
 /* ---------- formatting ---------- */
 function toEn(s){return String(s==null?'':s).replace(/[০-৯]/g,function(d){return String(BN.indexOf(d));}).replace(/[,\s৳]/g,'');}
 function num(s){var v=parseFloat(toEn(s));return isFinite(v)?v:0;}
-var NF0=new Intl.NumberFormat('bn-BD',{maximumFractionDigits:0});
-var NF1=new Intl.NumberFormat('bn-BD',{maximumFractionDigits:1});
-var NF2=new Intl.NumberFormat('bn-BD',{maximumFractionDigits:2});
-var NFI=new Intl.NumberFormat('bn-BD',{useGrouping:false,maximumFractionDigits:2});
+var LATN=false;try{LATN=localStorage.getItem('veku-digits')==='latn';}catch(e){}
+var NF0,NF1,NF2,NFI,DF,DFY;
+function mkFmt(){
+  var L=LATN?'bn-BD-u-nu-latn':'bn-BD';
+  NF0=new Intl.NumberFormat(L,{maximumFractionDigits:0});NF1=new Intl.NumberFormat(L,{maximumFractionDigits:1});
+  NF2=new Intl.NumberFormat(L,{maximumFractionDigits:2});NFI=new Intl.NumberFormat(L,{useGrouping:false,maximumFractionDigits:2});
+  DF=new Intl.DateTimeFormat(L,{day:'numeric',month:'short'});DFY=new Intl.DateTimeFormat(L,{day:'numeric',month:'short',year:'numeric'});
+}
+mkFmt();
 function DIG(n){return NFI.format(n);}
 function tk(n){n=Math.round(+n||0);return (n<0?'−':'')+'৳'+NF0.format(Math.abs(n));}
 function amt(n){n=Math.round(+n||0);return (n<0?'−':'')+NF0.format(Math.abs(n));}
 function q1(n){return NF1.format(+n||0);}
+function tka(n){return tk(Math.abs(+n||0));}
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 function pad(n){return String(n).padStart(2,'0');}
 var MONTHS=[];for(var i=0;i<12;i++){MONTHS.push(new Intl.DateTimeFormat('bn-BD',{month:'long'}).format(new Date(2026,i,1)));}
-var DF=new Intl.DateTimeFormat('bn-BD',{day:'numeric',month:'short'});
-var DFY=new Intl.DateTimeFormat('bn-BD',{day:'numeric',month:'short',year:'numeric'});
 var WF=new Intl.DateTimeFormat('bn-BD',{weekday:'long'});
 function toDate(iso){var p=String(iso||'2000-01-01').slice(0,10).split('-').map(Number);return new Date(p[0],p[1]-1,p[2]);}
 function todayISO(){var d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
@@ -37,7 +41,9 @@ function fullDate(iso){return DF.format(toDate(iso))+', '+WF.format(toDate(iso))
 var PAYL={cash:'নগদ',due:'বাকি'};
 function normPhone(p){var s=toEn(p).replace(/\D/g,'');if(s.indexOf('880')===0)s=s.slice(2);if(s.length===10&&s.charAt(0)==='1')s='0'+s;return /^01\d{9}$/.test(s)?s:null;}
 function phoneEmail(p){return p+'@'+(CFG.emailDomain||'phone.veku-hisab.app');}
-function bnPhone(p){return String(p||'').replace(/\d/g,function(d){return BN.charAt(+d);});}
+function bnPhone(p){return LATN?String(p||''):String(p||'').replace(/\d/g,function(d){return BN.charAt(+d);});}
+function setDigits(latn){LATN=!!latn;try{localStorage.setItem('veku-digits',LATN?'latn':'beng');}catch(e){}mkFmt();setupPeriod();render();}
+function digitsHTML(){return '<div class="seg2" role="group" aria-label="সংখ্যা দেখানো"><button type="button" data-digits="beng" aria-pressed="'+(!LATN)+'">বাংলা ১২৩</button><button type="button" data-digits="latn" aria-pressed="'+LATN+'">English 123</button></div>';}
 
 /* ---------- settings ---------- */
 function normVekus(v){v=v||{};return {v1:{name:(v.v1&&v.v1.name)||'ভেকু ১'},v2:{name:(v.v2&&v.v2.name)||'ভেকু ২'}};}
@@ -164,11 +170,15 @@ function rowsE(v,m){return S.entries.filter(function(r){return r.veku===v&&inPer
 function rowsR(v,m){return S.repairs.filter(function(r){return r.veku===v&&inPeriod(r,m);}).sort(byDate);}
 function totals(v,m){
   var e=rowsE(v,m),r=rowsR(v,m),t={hours:0,litres:0,fuel:0,deposit:0,driver:0,repair:0,days:0,n:e.length+r.length},days={};
-  e.forEach(function(x){t.hours+=+x.hours||0;t.litres+=+x.litres||0;t.fuel+=+x.fuel_cost||0;t.deposit+=+x.deposit||0;t.driver+=+x.driver_wage||0;if((+x.hours||0)>0)days[x.date]=1;});
+  t.income=0;t.unratedHours=0;
+  e.forEach(function(x){t.hours+=+x.hours||0;t.litres+=+x.litres||0;t.fuel+=+x.fuel_cost||0;t.deposit+=+x.deposit||0;t.driver+=+x.driver_wage||0;if((+x.hours||0)>0)days[x.date]=1;
+    var rate=siteRate(x.site_id);if(rate>0)t.income+=(+x.hours||0)*rate;else{t.income+=+x.deposit||0;if(+x.hours>0)t.unratedHours+=+x.hours;}});
   r.forEach(function(x){t.repair+=+x.amount||0;});
-  t.days=Object.keys(days).length;t.cost=t.fuel+t.driver+t.repair;t.net=t.deposit-t.cost;t.lph=t.hours?t.litres/t.hours:0;
+  t.days=Object.keys(days).length;t.cost=t.fuel+t.driver+t.repair;t.net=t.income-t.cost;t.lph=t.hours?t.litres/t.hours:0;
   return t;
 }
+function siteRate(id){var x=id?siteBy(id):null;return x?(+x.rate||0):0;}
+function sitesDueTotal(){var d=0;S.sites.forEach(function(x){if(+x.rate>0){var a=siteSum(x.id),v=a.hours*x.rate-a.deposit;if(v>0)d+=v;}});return d;}
 function periodLabel(){return S.month?MONTHS[S.month-1]+' '+DIG(S.year):DIG(S.year)+' সাল (সব মাস)';}
 function pIn(){return S.month?MONTHS[S.month-1]+' '+DIG(S.year)+'-এ':DIG(S.year)+' সালে';}
 function pOf(){return S.month?MONTHS[S.month-1]+' '+DIG(S.year)+'-এর':DIG(S.year)+' সালের';}
@@ -284,22 +294,24 @@ function emptyHTML(what){
     '<p>প্রতিদিনের ঘণ্টা, ডিজেল, জমা আর ড্রাইভারের মজুরি লিখুন। নিজে লিখতে পারেন, অথবা ড্রাইভারের পাঠানো হিসাব অনুমোদন করতে পারেন। মেরামত বা যন্ত্রাংশের খরচ আলাদা লিখুন। লাভ আর মালিকদের ভাগ এখানে নিজে থেকেই হিসাব হবে।</p>'+
     '<div class="actions"><button type="button" class="btn primary" data-add="entry">দৈনিক হিসাব লিখুন</button><button type="button" class="btn" data-add="repair">মেরামত খরচ লিখুন</button></div></section>';
 }
+function netWord(n){return n<0?'লোকসান':'লাভ';}
 function barHTML(t){
-  var tot=Math.max(t.deposit,t.cost);
+  var tot=Math.max(t.income,t.cost);
   if(!tot)return '<div class="bar" aria-hidden="true"></div>';
   function seg(val,cls){return val>0?'<span class="seg '+cls+'" style="width:'+(val/tot*100).toFixed(2)+'%"></span>':'';}
-  return '<div class="bar" role="img" aria-label="জমা '+tk(t.deposit)+'; ডিজেল '+tk(t.fuel)+', ড্রাইভার '+tk(t.driver)+', মেরামত '+tk(t.repair)+'">'+
+  return '<div class="bar" role="img" aria-label="আয় '+tk(t.income)+'; ডিজেল '+tk(t.fuel)+', ড্রাইভার '+tk(t.driver)+', মেরামত '+tk(t.repair)+'">'+
     seg(t.fuel,'fuel')+seg(t.driver,'driver')+seg(t.repair,'repair')+(t.net>0?seg(t.net,'profit'):'')+
-    (t.net<0&&t.deposit>0?'<span class="mark" style="left:calc('+(t.deposit/tot*100).toFixed(2)+'% - 1px)"></span>':'')+'</div>';
+    (t.net<0&&t.income>0?'<span class="mark" style="left:calc('+(t.income/tot*100).toFixed(2)+'% - 1px)"></span>':'')+'</div>';
 }
 var LEGEND='<ul class="legend"><li><i style="background:var(--seg-fuel)"></i>ডিজেল</li><li><i style="background:var(--seg-driver)"></i>ড্রাইভার</li><li><i style="background:var(--seg-repair)"></i>মেরামত</li><li><i style="background:var(--seg-profit)"></i>লাভ</li></ul>';
 function vcardHTML(v,t){
   return '<article class="vcard">'+
     '<div class="vhead">'+plate(v)+'<h3>'+esc(vName(v))+'</h3><span class="days">'+DIG(t.days)+' দিন কাজ</span></div>'+
-    '<div class="kv3"><div><span>জমা</span><b>'+tk(t.deposit)+'</b></div><div><span>মোট খরচ</span><b>'+tk(t.cost)+'</b></div><div><span>'+(t.net<0?'লোকসান':'নিট লাভ')+'</span><b class="'+(t.net<0?'neg':t.net>0?'pos':'')+'">'+tk(t.net)+'</b></div></div>'+
-    '<div class="barbox">'+barHTML(t)+LEGEND+(t.net<0&&t.deposit>0?'<p class="hint">কালো দাগ পর্যন্ত জমা। খরচ জমার চেয়ে '+tk(-t.net)+' বেশি।</p>':'')+'</div>'+
+    '<div class="kv3"><div><span>কাজের আয়</span><b>'+tk(t.income)+'</b></div><div><span>মোট খরচ</span><b>'+tk(t.cost)+'</b></div><div><span>'+netWord(t.net)+'</span><b class="'+(t.net<0?'neg':t.net>0?'pos':'')+'">'+tka(t.net)+'</b></div></div>'+
+    '<div class="barbox">'+barHTML(t)+LEGEND+(t.net<0&&t.income>0?'<p class="hint">কালো দাগ পর্যন্ত আয়। খরচ আয়ের চেয়ে '+tka(t.net)+' বেশি।</p>':'')+'</div>'+
     '<dl class="facts">'+
       '<div><dt>ভেকু চলেছে</dt><dd>'+q1(t.hours)+' ঘণ্টা</dd></div>'+
+      '<div><dt>সাইট থেকে জমা পেয়েছেন</dt><dd>'+tk(t.deposit)+'</dd></div>'+
       '<div><dt>ডিজেল নেওয়া হয়েছে</dt><dd>'+q1(t.litres)+' লিটার</dd></div>'+
       '<div><dt>গড়ে প্রতি ঘণ্টায় ডিজেল</dt><dd>'+(t.hours&&t.litres?NF1.format(t.lph)+' লিটার':'—')+'</dd></div>'+
       '<div><dt>ডিজেলের খরচ</dt><dd>'+tk(t.fuel)+'</dd></div>'+
@@ -312,11 +324,11 @@ function vcardHTML(v,t){
 function ownersShareHTML(t){
   var own=S.settings.owners,s1=0,s2=0;
   own.forEach(function(o){s1+=o.s1;s2+=o.s2;});
-  var h='<section class="panel"><div class="panel-head"><h2>মালিকদের ভাগ</h2><p class="hint">'+pOf()+' নিট লাভ, প্রত্যেকের অংশ অনুযায়ী</p></div><ul class="olist">';
+  var h='<section class="panel"><div class="panel-head"><h2>মালিকদের ভাগ</h2><p class="hint">'+pOf()+' লাভ (কাজের আয় থেকে খরচ বাদ দিয়ে), প্রত্যেকের অংশ অনুযায়ী</p></div><ul class="olist">';
   own.forEach(function(o,i){
-    var a1=t.v1.net*o.s1/100,a2=t.v2.net*o.s2/100;
-    h+='<li><span class="oname">'+esc(o.name||('মালিক '+DIG(i+1)))+'</span><span class="oamt '+(a1+a2<0?'neg':'')+'">'+tk(a1+a2)+'</span>'+
-      '<span class="odetail">'+esc(vName('v1'))+': '+tk(a1)+' ('+DIG(o.s1)+'%) · '+esc(vName('v2'))+': '+tk(a2)+' ('+DIG(o.s2)+'%)</span></li>';
+    var a1=t.v1.net*o.s1/100,a2=t.v2.net*o.s2/100,tot=a1+a2;
+    h+='<li><span class="oname">'+esc(o.name||('মালিক '+DIG(i+1)))+'</span><span class="oamt '+(tot<0?'neg':'')+'">'+(tot<0?'লোকসান ':'')+tka(tot)+'</span>'+
+      '<span class="odetail">'+esc(vName('v1'))+': '+(a1<0?'লোকসান ':'')+tka(a1)+' ('+DIG(o.s1)+'%) · '+esc(vName('v2'))+': '+(a2<0?'লোকসান ':'')+tka(a2)+' ('+DIG(o.s2)+'%)</span></li>';
   });
   h+='</ul>';
   var w=[];
@@ -326,33 +338,36 @@ function ownersShareHTML(t){
   return h+'</section>';
 }
 function duesPanelHTML(){
-  var dr=0,sh=0;
+  var dr=0,sh=0,st=sitesDueTotal();
   activeDrivers().forEach(function(d){var b=dBal(d.id).bal;if(b>0)dr+=b;});
   shopNames().forEach(function(s){var b=shopBal(s).bal;if(b>0)sh+=b;});
   return '<section class="panel"><div class="panel-head"><h2>পাওনা-দেনা</h2><p class="hint">আজ পর্যন্ত মোট, সব মাস মিলিয়ে</p></div>'+
-    '<dl class="facts"><div><dt>ড্রাইভারদের পাওনা বাকি</dt><dd>'+tk(dr)+'</dd></div><div><dt>ডিজেলের দোকানে বাকি</dt><dd>'+tk(sh)+'</dd></div></dl>'+
-    '<div class="actions"><button type="button" class="btn small" data-go="drivers">ড্রাইভারের হিসাব</button><button type="button" class="btn small" data-go="diesel">দোকানের বাকি</button></div></section>';
+    '<dl class="facts"><div><dt>সাইটগুলোর কাছে আপনার পাওনা</dt><dd class="pos">'+tk(st)+'</dd></div><div><dt>ড্রাইভারদের পাওনা বাকি</dt><dd>'+tk(dr)+'</dd></div><div><dt>ডিজেলের দোকানে বাকি</dt><dd>'+tk(sh)+'</dd></div></dl>'+
+    '<div class="actions"><button type="button" class="btn small" data-go="sites">সাইটের হিসাব</button><button type="button" class="btn small" data-go="drivers">ড্রাইভারের হিসাব</button><button type="button" class="btn small" data-go="diesel">দোকানের বাকি</button></div></section>';
 }
 function monthTableHTML(){
-  var rows='',any=false,T={h:0,d:0,c:0,n:0};
+  var rows='',any=false,T={h:0,i:0,c:0,n:0};
   for(var m=1;m<=12;m++){
     var a=totals('v1',m),b=totals('v2',m);
     if(!a.n&&!b.n)continue;any=true;
-    var h=a.hours+b.hours,d=a.deposit+b.deposit,c=a.cost+b.cost,n=a.net+b.net;
-    T.h+=h;T.d+=d;T.c+=c;T.n+=n;
-    rows+='<tr class="click" data-month="'+m+'"><td class="c1">'+MONTHS[m-1]+'</td><td class="n">'+q1(h)+'</td><td class="n">'+amt(d)+'</td><td class="n">'+amt(c)+'</td><td class="n '+(n<0?'neg':'')+'">'+amt(n)+'</td></tr>';
+    var h=a.hours+b.hours,inc=a.income+b.income,c=a.cost+b.cost,n=a.net+b.net;
+    T.h+=h;T.i+=inc;T.c+=c;T.n+=n;
+    rows+='<tr class="click" data-month="'+m+'"><td class="c1">'+MONTHS[m-1]+'</td><td class="n">'+q1(h)+'</td><td class="n">'+amt(inc)+'</td><td class="n">'+amt(c)+'</td><td class="n '+(n<0?'neg':'pos')+'">'+amt(Math.abs(n))+'</td></tr>';
   }
   if(!any)return '';
-  return '<section class="panel"><div class="panel-head"><h2>মাসভিত্তিক হিসাব</h2><p class="hint">দুই ভেকু মিলে। কোনো মাসে চাপ দিলে সেই মাসের বিস্তারিত দেখাবে।</p></div>'+
-    '<div class="tbl-wrap"><table class="khata narrow"><thead><tr><th class="c1">মাস</th><th class="n">সময় (ঘণ্টা)</th><th class="n">জমা (৳)</th><th class="n">খরচ (৳)</th><th class="n">নিট (৳)</th></tr></thead><tbody>'+rows+
-    '</tbody><tfoot><tr><td class="c1">মোট</td><td class="n">'+q1(T.h)+'</td><td class="n">'+amt(T.d)+'</td><td class="n">'+amt(T.c)+'</td><td class="n">'+amt(T.n)+'</td></tr></tfoot></table></div></section>';
+  return '<section class="panel"><div class="panel-head"><h2>মাসভিত্তিক হিসাব</h2><p class="hint">দুই ভেকু মিলে। সবুজ মানে লাভ, লাল মানে লোকসান। কোনো মাসে চাপ দিলে সেই মাসের বিস্তারিত দেখাবে।</p></div>'+
+    '<div class="tbl-wrap"><table class="khata narrow"><thead><tr><th class="c1">মাস</th><th class="n">সময় (ঘণ্টা)</th><th class="n">আয় (৳)</th><th class="n">খরচ (৳)</th><th class="n">লাভ/লোকসান (৳)</th></tr></thead><tbody>'+rows+
+    '</tbody><tfoot><tr><td class="c1">মোট</td><td class="n">'+q1(T.h)+'</td><td class="n">'+amt(T.i)+'</td><td class="n">'+amt(T.c)+'</td><td class="n '+(T.n<0?'neg':'pos')+'">'+amt(Math.abs(T.n))+'</td></tr></tfoot></table></div></section>';
 }
 function sumHTML(){
   var t={v1:totals('v1'),v2:totals('v2')};
-  var dep=t.v1.deposit+t.v2.deposit,cost=t.v1.cost+t.v2.cost,net=dep-cost;
-  var h='<section class="hero"><p class="eyebrow">'+periodLabel()+' · দুই ভেকু মিলে '+(net<0?'নিট লোকসান':'নিট লাভ')+'</p>'+
-    '<p class="big '+(net<0?'neg':net>0?'pos':'zero')+'">'+tk(net)+'</p>'+
-    '<p class="hero-sub"><span>মোট জমা <b>'+tk(dep)+'</b></span><span>মোট খরচ <b>'+tk(cost)+'</b></span></p></section>';
+  var inc=t.v1.income+t.v2.income,dep=t.v1.deposit+t.v2.deposit,cost=t.v1.cost+t.v2.cost,net=inc-cost,un=t.v1.unratedHours+t.v2.unratedHours,due=sitesDueTotal();
+  var h='<section class="hero"><p class="eyebrow">'+periodLabel()+' · দুই ভেকু মিলে নিট '+netWord(net)+'</p>'+
+    '<p class="big '+(net<0?'neg':net>0?'pos':'zero')+'">'+tka(net)+'</p>'+
+    '<p class="hero-sub"><span>কাজের আয় <b>'+tk(inc)+'</b></span><span>মোট খরচ <b>'+tk(cost)+'</b></span></p>'+
+    '<p class="hero-sub2"><span>এই সময়ে জমা পেয়েছেন <b>'+tk(dep)+'</b></span><span class="due">সাইটগুলোর কাছে মোট বাকি <b>'+tk(due)+'</b></span></p>'+
+    (un>0?'<p class="hint" style="margin-top:6px">'+q1(un)+' ঘণ্টার কাজ এমন সাইটে, যার ঘণ্টার রেট দেওয়া নেই। সেখানে শুধু জমার টাকাকে আয় ধরা হয়েছে। "সাইট" পাতায় রেট দিন।</p>':'')+
+    '</section>';
   if(!(t.v1.n+t.v2.n))h+=emptyHTML('এখনও কোনো হিসাব খাতায় ওঠেনি');
   h+='<div class="vgrid">'+vcardHTML('v1',t.v1)+vcardHTML('v2',t.v2)+'</div>';
   h+=sitePeriodHTML()+ownersShareHTML(t)+duesPanelHTML();
@@ -522,7 +537,7 @@ function dieselHTML(){
   h+='<div class="plist">'+shops.map(function(s){
     var open=S.openShop===s.name,inList=S.settings.shops.indexOf(s.name)>=0;
     return '<article class="pcard'+(open?' wide':'')+'"><div class="phead"><b>'+esc(s.name)+'</b></div>'+
-      '<div class="kv3"><div><span>বাকিতে নেওয়া</span><b>'+tk(s.b.due)+'</b></div><div><span>টাকা দিয়েছেন</span><b>'+tk(s.b.paid)+'</b></div><div><span>বাকি আছে</span><b class="'+(s.b.bal>0?'neg':'')+'">'+tk(s.b.bal)+'</b></div></div>'+
+      '<div class="kv3"><div><span>বাকিতে নেওয়া</span><b>'+tk(s.b.due)+'</b></div><div><span>টাকা দিয়েছেন</span><b>'+tk(s.b.paid)+'</b></div><div><span>'+(s.b.bal<0?'বেশি দিয়েছেন':'বাকি আছে')+'</span><b class="'+(s.b.bal>0?'neg':'')+'">'+tka(s.b.bal)+'</b></div></div>'+
       '<div class="actions"><button type="button" class="btn primary small" data-spaynew="'+esc(s.name)+'">টাকা দিলাম লিখুন</button><button type="button" class="btn small" data-sopen="'+esc(s.name)+'">'+(open?'হিসাব লুকান':'হিসাব দেখুন')+'</button>'+
       (inList&&Math.abs(s.b.bal)<1&&!s.b.due&&!s.b.paid?'<button type="button" class="btn ghost small" data-sremove="'+esc(s.name)+'">তালিকা থেকে সরান</button>':'')+'</div>'+
       (open?stmtTable(shopStmtRows(S.shopStmt[s.name]),['ডিজেল নেওয়া (৳)','টাকা দিয়েছি (৳)'],'data-spay'):'')+'</article>';
@@ -625,7 +640,7 @@ function ownersHTML(){
   h+='<div class="actions"><button type="button" class="btn primary" data-act="save-owners" id="ownSave"'+(S.ownersDirty?'':' disabled')+'>সংরক্ষণ করুন</button><button type="button" class="btn ghost" data-act="reset-owners" id="ownReset"'+(S.ownersDirty?'':' disabled')+'>বাতিল</button></div>';
   var ph=S.user&&S.user.email?S.user.email.split('@')[0]:'';
   h+='<section class="panel"><div class="panel-head"><h2>আপনার অ্যাকাউন্ট</h2><p class="hint">লগইনের মোবাইল নম্বর: '+esc(bnPhone(ph))+'</p></div>'+
-    '<div class="actions"><button type="button" class="btn" data-act="my-password">পাসওয়ার্ড বদলান</button><button type="button" class="btn ghost" data-act="logout">বের হন</button></div></section>';
+    '<div class="field"><span>সংখ্যা কীভাবে দেখাবে <em>শুধু এই ফোনে</em></span>'+digitsHTML()+'</div>'+'<div class="actions"><button type="button" class="btn" data-act="my-password">পাসওয়ার্ড বদলান</button><button type="button" class="btn ghost" data-act="logout">বের হন</button></div></section>';
   return h;
 }
 function osumHTML(){
@@ -654,6 +669,7 @@ function driverTopHTML(){
     '<div class="kv3"><div><span>মজুরি হয়েছে</span><b>'+tk(earned)+'</b></div><div><span>নিয়েছেন</span><b>'+tk(paid)+'</b></div><div><span>মোট কাজ</span><b>'+q1(a.hours)+' ঘণ্টা</b></div></div>'+
     '<button type="button" class="linkbtn" data-act="my-stmt">'+(open?'লেনদেন লুকান':'সব লেনদেন দেখুন')+'</button>'+
     (open?stmtTable(driverStmtRows(a.statement||[]),['মজুরি (৳)','নিয়েছেন (৳)'],null):'')+
+    '<div class="field"><span>সংখ্যা কীভাবে দেখাবে</span>'+digitsHTML()+'</div>'+
     (d.active===false?'<p class="note">মালিক আপনাকে ড্রাইভারের তালিকা থেকে সরিয়েছেন, তাই নতুন হিসাব পাঠানো যাবে না।</p>':'')+
   '</section>';
 }
@@ -1168,6 +1184,7 @@ document.addEventListener('click',function(e){
   if((x=t.closest('[data-sitecsv]'))){downloadSiteCSV(x.dataset.sitecsv);return;}
   if((x=t.closest('tr[data-sitego]'))){siteGo(x.dataset.sitego);return;}
   if((x=t.closest('tr[data-sentry]'))){sentryOpen(x);return;}
+  if((x=t.closest('[data-digits]'))){setDigits(x.dataset.digits==='latn');return;}
   if((x=t.closest('[data-copy]'))){var el=document.getElementById(x.dataset.copy);if(el)copyText(el.textContent,el);return;}
   if((x=t.closest('[data-rm]'))){S.ownersDraft.owners.splice(+x.dataset.rm,1);S.ownersDirty=true;renderOwnersPanel();return;}
   if((x=t.closest('[data-apgo]'))){quickApprove(x.dataset.apgo,x);return;}
