@@ -80,11 +80,11 @@ function fnErrText(e){return FNERR[e&&e.code]||errText(e);}
 var S={phase:'boot',role:null,user:null,needSetup:false,tab:'sum',veku:'v1',year:now.getFullYear(),month:now.getMonth()+1,
   settings:normSettings(null),drivers:[],entries:[],repairs:[],pending:[],dbal:{},sbal:[],sites:[],ssum:{},
   openDriver:null,openShop:null,openSite:null,stmt:{},shopStmt:{},siteStmt:{},
-  acct:null,pub:{vekus:normVekus(),shops:[],sites:[]},mine:[],openMine:false,
+  acct:null,pub:{vekus:normVekus(),shops:[],sites:[]},mine:[],openMine:false,apDep:{},
   loadErr:'',ownersDraft:null,ownersDirty:false,shown:''};
 function resetData(){
   S.settings=normSettings(null);S.drivers=[];S.entries=[];S.repairs=[];S.pending=[];S.dbal={};S.sbal=[];S.stmt={};S.shopStmt={};
-  S.sites=[];S.ssum={};S.siteStmt={};S.openSite=null;
+  S.sites=[];S.ssum={};S.siteStmt={};S.openSite=null;S.apDep={};
   S.acct=null;S.mine=[];S.ownersDraft=null;S.ownersDirty=false;S.tab='sum';S.openDriver=null;S.openShop=null;
 }
 
@@ -366,22 +366,54 @@ function fuelLine(x){
   var rate=+x.litres>0&&+x.fuel_cost>0?Math.round(x.fuel_cost/x.litres*100)/100:0;
   return '<p class="fuelline">ডিজেল'+(x.fuel_src?' ('+esc(x.fuel_src)+')':'')+': '+q1(x.litres)+' লিটার'+(rate?' × '+tk(rate)+' = <b>'+tk(x.fuel_cost)+'</b>':(+x.fuel_cost?' · '+tk(x.fuel_cost):''))+(x.fuel_pay?' <span class="st '+x.fuel_pay+'">'+PAYL[x.fuel_pay]+'</span>':' <span class="st pending">নগদ না বাকি, আপনি বাছবেন</span>')+'</p>';
 }
+function apEntry(p){
+  var w=wageFor(p.driver_id,p.hours),cost=+p.fuel_cost||0;
+  return {veku:p.veku,date:p.date,site_id:p.site_id||null,site:siteName(p),hours:+p.hours||0,litres:+p.litres||0,fuel_cost:cost,fuel_src:p.fuel_src||'',
+    fuel_pay:cost>0?(p.fuel_src?'due':'cash'):'',deposit:0,driver_wage:w==null?0:w,driver_id:p.driver_id||null,remarks:p.remarks||''};
+}
 function approveHTML(){
   var list=S.pending.slice().sort(byDate);
-  var h='<div class="panel-head"><p class="eyebrow">ড্রাইভারদের পাঠানো হিসাব</p><h2>অনুমোদনের অপেক্ষায়: '+DIG(list.length)+'টি</h2><p class="hint">সাইট থেকে কত টাকা জমা হয়েছে লিখে অনুমোদন করলে হিসাবটি দৈনিক খাতায় উঠবে। ড্রাইভারের মজুরি তার হার অনুযায়ী নিজে বসে যাবে।</p></div>';
+  var h='<div class="panel-head"><p class="eyebrow">ড্রাইভারদের পাঠানো হিসাব</p><h2>অনুমোদনের অপেক্ষায়: '+DIG(list.length)+'টি</h2><p class="hint">দেখে নিয়ে সাইট থেকে পাওয়া টাকা লিখুন, তারপর "কনফার্ম" চাপুন। ডিজেলের টাকা নিজে থেকে দোকানের নামে বাকি হিসেবে উঠবে, আর ড্রাইভারের মজুরি তার হার অনুযায়ী বসবে।</p></div>';
   if(!list.length){
     h+='<section class="empty">'+EXC+'<h2>এখন অনুমোদনের অপেক্ষায় কোনো হিসাব নেই</h2><p>লগইন আছে এমন ড্রাইভার ঘণ্টা আর ডিজেল পাঠালে এখানে দেখাবে। ড্রাইভারকে লগইন দিতে "ড্রাইভার" পাতায় যান।</p><div class="actions"><button type="button" class="btn" data-go="drivers">ড্রাইভার পাতা</button><button type="button" class="btn ghost" data-act="refresh">নতুন করে দেখুন</button></div></section>';
     return h;
   }
   return h+'<div class="plist">'+list.map(function(p){
+    var e=apEntry(p),d=driverBy(p.driver_id),rate=e.litres>0&&e.fuel_cost>0?Math.round(e.fuel_cost/e.litres*100)/100:0;
+    var wageLine=wageFor(p.driver_id,p.hours)==null?'<p class="warn">'+esc(driverName(p.driver_id))+'-এর মজুরি প্রতিবার লেখা হয়। "বদলে কনফার্ম" চেপে মজুরি লিখুন।</p>':
+      '<dl class="facts">'+(e.fuel_cost>0?'<div><dt>ডিজেল'+(e.fuel_src?' ('+esc(e.fuel_src)+')':'')+'</dt><dd>'+q1(e.litres)+' লি.'+(rate?' × '+tk(rate):'')+' = '+tk(e.fuel_cost)+'</dd></div>':'')+
+      '<div><dt>মজুরি ('+esc(driverName(p.driver_id))+')</dt><dd>'+(d&&d.rate_type==='hour'?q1(p.hours)+' × '+tk(d.rate)+' = ':'')+tk(e.driver_wage)+'</dd></div></dl>';
+    var newSite=!p.site_id&&p.site_name&&!siteByName(p.site_name);
     return '<article class="pcard"><div class="phead">'+plate(p.veku)+'<b>'+esc(vName(p.veku))+'</b><span class="muted">'+fullDate(p.date)+'</span></div>'+
-      '<div class="pnums"><span>চালিয়েছে<b>'+q1(p.hours)+' ঘণ্টা</b></span>'+(+p.litres>0?'<span>ডিজেল নিয়েছে<b>'+q1(p.litres)+' লিটার</b></span>':'')+'</div>'+
-      (siteName(p)?'<p class="fuelline">সাইট: <b>'+esc(siteName(p))+'</b>'+(!p.site_id&&p.site_name?' <span class="st pending">তালিকায় নেই</span>':'')+'</p>':'')+
-      fuelLine(p)+
-      '<p class="hint">পাঠিয়েছেন: '+esc(driverName(p.driver_id))+(p.remarks?' · '+esc(p.remarks):'')+'</p>'+
-      '<button type="button" class="btn primary" data-approve="'+esc(p.id)+'">জমা লিখে অনুমোদন করুন</button>'+
+      '<div class="pnums"><span>চালিয়েছে<b>'+q1(p.hours)+' ঘণ্টা</b></span>'+(e.litres>0?'<span>ডিজেল<b>'+q1(e.litres)+' লিটার</b></span>':'')+'</div>'+
+      (siteName(p)?'<p class="fuelline">সাইট: <b>'+esc(siteName(p))+'</b>'+(newSite?' <span class="st pending">নতুন, তালিকায় যোগ হবে</span>':'')+'</p>':'<p class="warn">কোনো সাইট বাছাই করা নেই। "বদলে কনফার্ম" চেপে সাইট বেছে দিন।</p>')+
+      wageLine+
+      (e.fuel_cost>0&&e.fuel_src?'<p class="hint">কনফার্ম করলে '+esc(e.fuel_src)+'-এর নামে '+tk(e.fuel_cost)+' বাকি উঠবে।</p>':'')+
+      (p.remarks?'<p class="hint">মন্তব্য: '+esc(p.remarks)+'</p>':'')+
+      '<label class="field"><span>সাইট থেকে পেলেন (৳) <em>না পেলে খালি রাখুন</em></span><input type="text" class="num key" inputmode="decimal" autocomplete="off" placeholder="০" id="apd-'+esc(p.id)+'" data-apdep="'+esc(p.id)+'" value="'+esc(S.apDep[p.id]||'')+'"></label>'+
+      '<button type="button" class="btn primary wide" data-apgo="'+esc(p.id)+'">কনফার্ম</button>'+
+      '<div class="actions"><button type="button" class="btn ghost small" data-approve="'+esc(p.id)+'">বদলে কনফার্ম</button></div>'+
     '</article>';
   }).join('')+'</div>';
+}
+async function quickApprove(id,btn){
+  var p=S.pending.filter(function(x){return x.id===id;})[0];if(!p)return;
+  var e=apEntry(p);
+  if(wageFor(p.driver_id,p.hours)==null){openSheet('entry',null,p);return;}
+  if(!e.site_id&&!p.site_name){openSheet('entry',null,p);return;}
+  e.deposit=num(S.apDep[id]||'');
+  btn.disabled=true;btn.textContent='কনফার্ম হচ্ছে…';
+  try{
+    var created=false;
+    if(!e.site_id&&p.site_name){var ex=siteByName(p.site_name);if(ex){e.site_id=ex.id;e.site=ex.name;}else{var ns=await q(sb.from('sites').insert({name:p.site_name.trim()}).select('id').single());e.site_id=ns.id;e.site=p.site_name.trim();created=true;}}
+    await q(sb.rpc('approve_submission',{p_id:id,p_entry:e}));
+    delete S.apDep[id];
+    toast('কনফার্ম হয়েছে'+(e.fuel_pay==='due'?' · '+e.fuel_src+'-এর বাকিতে '+tk(e.fuel_cost)+' উঠেছে':''));
+    await addShopIfNew(e.fuel_src);
+    var jobs=[reloadYear(),reloadBal(),qPending().then(function(r){S.pending=r||[];})];if(created)jobs.push(reloadSites());
+    await Promise.all(jobs);
+    render();
+  }catch(err){btn.disabled=false;btn.textContent='কনফার্ম';toast(errText(err));}
 }
 
 /* ----- owner: ledgers ----- */
@@ -448,7 +480,7 @@ function driverStmtRows(list){
 function shopStmtRows(list){
   if(!list)return null;
   return list.map(function(r){return {kind:r.kind,id:r.id,date:r.date,amount:+r.amount||0,
-    text:r.kind==='paid'?('বাকি শোধ'+(r.note?' · '+esc(r.note):'')):(esc(vName(r.veku))+' · '+q1(r.litres)+' লিটার')};});
+    text:r.kind==='paid'?('টাকা দিয়েছি'+(r.note?' · '+esc(r.note):'')):(esc(vName(r.veku))+' · '+q1(r.litres)+' লিটার')};});
 }
 async function loadDriverStmt(id){try{S.stmt[id]=await q(sb.rpc('driver_statement',{p_driver:id}))||[];}catch(e){S.stmt[id]=[];toast(errText(e));}render();}
 async function loadShopStmt(name){try{S.shopStmt[name]=await q(sb.rpc('shop_statement',{p_shop:name}))||[];}catch(e){S.shopStmt[name]=[];toast(errText(e));}render();}
@@ -485,15 +517,15 @@ function siteUrl(){return location.origin+location.pathname.replace(/index\.html
 function dieselHTML(){
   var shops=shopNames().map(function(s){return {name:s,b:shopBal(s)};}).sort(function(a,b){return b.b.bal-a.b.bal;});
   var total=sum(shops,function(s){return s.b.bal>0?s.b.bal:0;});
-  var h='<section class="hero"><p class="eyebrow">ডিজেলের দোকান ও পাম্প · আজ পর্যন্ত</p><p class="big '+(total>0?'neg':'zero')+'">'+tk(total)+'</p><p class="hero-sub"><span>দোকানগুলোতে মোট বাকি। দৈনিক হিসাবে "বাকি" বাছা ডিজেল এখানে যোগ হয়।</span></p></section>';
+  var h='<section class="hero"><p class="eyebrow">ডিজেলের দোকান ও পাম্প · আজ পর্যন্ত</p><p class="big '+(total>0?'neg':'zero')+'">'+tk(total)+'</p><p class="hero-sub"><span>দোকানগুলোতে মোট বাকি। ড্রাইভারের ডিজেল কনফার্ম করলে দোকানের নামে এখানে যোগ হয়, টাকা দিলে কমে।</span></p></section>';
   if(!shops.length)return h+'<section class="empty">'+EXC+'<h2>এখনও কোনো দোকান বা পাম্প নেই</h2><p>যেসব দোকান বা পাম্প থেকে ডিজেল আনা হয়, সেগুলোর নাম যোগ করুন। ড্রাইভার আর আপনি হিসাব লেখার সময় তালিকা থেকে বাছতে পারবেন।</p><div class="actions"><button type="button" class="btn primary" data-act="add-shop">দোকান বা পাম্প যোগ করুন</button></div></section>';
   h+='<div class="plist">'+shops.map(function(s){
     var open=S.openShop===s.name,inList=S.settings.shops.indexOf(s.name)>=0;
     return '<article class="pcard'+(open?' wide':'')+'"><div class="phead"><b>'+esc(s.name)+'</b></div>'+
-      '<div class="kv3"><div><span>বাকিতে নেওয়া</span><b>'+tk(s.b.due)+'</b></div><div><span>শোধ করেছেন</span><b>'+tk(s.b.paid)+'</b></div><div><span>বাকি আছে</span><b class="'+(s.b.bal>0?'neg':'')+'">'+tk(s.b.bal)+'</b></div></div>'+
-      '<div class="actions"><button type="button" class="btn primary small" data-spaynew="'+esc(s.name)+'">বাকি শোধ লিখুন</button><button type="button" class="btn small" data-sopen="'+esc(s.name)+'">'+(open?'হিসাব লুকান':'হিসাব দেখুন')+'</button>'+
+      '<div class="kv3"><div><span>বাকিতে নেওয়া</span><b>'+tk(s.b.due)+'</b></div><div><span>টাকা দিয়েছেন</span><b>'+tk(s.b.paid)+'</b></div><div><span>বাকি আছে</span><b class="'+(s.b.bal>0?'neg':'')+'">'+tk(s.b.bal)+'</b></div></div>'+
+      '<div class="actions"><button type="button" class="btn primary small" data-spaynew="'+esc(s.name)+'">টাকা দিলাম লিখুন</button><button type="button" class="btn small" data-sopen="'+esc(s.name)+'">'+(open?'হিসাব লুকান':'হিসাব দেখুন')+'</button>'+
       (inList&&Math.abs(s.b.bal)<1&&!s.b.due&&!s.b.paid?'<button type="button" class="btn ghost small" data-sremove="'+esc(s.name)+'">তালিকা থেকে সরান</button>':'')+'</div>'+
-      (open?stmtTable(shopStmtRows(S.shopStmt[s.name]),['বাকিতে (৳)','শোধ (৳)'],'data-spay'):'')+'</article>';
+      (open?stmtTable(shopStmtRows(S.shopStmt[s.name]),['ডিজেল নেওয়া (৳)','টাকা দিয়েছি (৳)'],'data-spay'):'')+'</article>';
   }).join('')+'</div>';
   return h+'<div class="actions"><button type="button" class="btn" data-act="add-shop">+ দোকান বা পাম্প যোগ করুন</button></div>';
 }
@@ -641,8 +673,8 @@ function drvVekuSeg(){
   $('#dVekuSeg').innerHTML=VK.map(function(x){return '<button type="button" class="'+x+'" data-dv="'+x+'" aria-pressed="'+(x===D.veku)+'">'+plate(x)+'<span>'+esc(vName(x))+'</span></button>';}).join('');
 }
 function dFuelCalc(){
-  var l=num($('#dLitres').value),r=num($('#dRate').value),out=$('#dFuelTotal');
-  if(l>0&&r>0){out.hidden=false;out.innerHTML=q1(l)+' লিটার × '+tk(r)+' = <b>'+tk(Math.round(l*r))+'</b>';}else out.hidden=true;
+  var l=num($('#dLitres').value),r=num($('#dRate').value);
+  if(l>0&&r>0)$('#dFuelAmt').value=shown(Math.round(l*r));
 }
 function lastDRate(){
   for(var i=0;i<S.mine.length;i++){var m=S.mine[i];if(+m.litres>0&&+m.fuel_cost>0)return Math.round(m.fuel_cost/m.litres*100)/100;}
@@ -659,7 +691,7 @@ function resetDrv(rec){
   $('#dLitres').value=rec?shown(rec.litres):'';
   $('#dSrc').value=rec?(rec.fuel_src||''):'';
   var rr=rec&&+rec.litres>0&&+rec.fuel_cost>0?Math.round(rec.fuel_cost/rec.litres*100)/100:lastDRate();
-  $('#dRate').value=rr?shown(rr):'';dFuelCalc();
+  $('#dRate').value=rr?shown(rr):'';$('#dFuelAmt').value=rec?shown(rec.fuel_cost):'';
   $('#dRemarks').value=rec?(rec.remarks||''):'';
   $('#drvTitle').textContent=rec?'পাঠানো হিসাব বদলান':'আজকের কাজ লিখুন';
   $('#dSave').textContent=rec?'বদলে পাঠান':'পাঠিয়ে দিন';
@@ -680,9 +712,8 @@ async function submitDrv(ev){
   var hours=num($('#dHours').value),litres=num($('#dLitres').value),fuel=0,src=$('#dSrc').value.trim();
   if(!(hours>0)&&!(litres>0))return dErr('কত ঘণ্টা চালিয়েছেন, অথবা কত লিটার ডিজেল নিয়েছেন লিখুন।');
   if(litres>0&&!src)return dErr('কোন দোকান বা পাম্প থেকে ডিজেল নিয়েছেন লিখুন।');
-  var rate=num($('#dRate').value);
-  if(litres>0&&!(rate>0))return dErr('ডিজেলের দর লিখুন, প্রতি লিটার কত টাকা।');
-  fuel=litres>0?Math.round(litres*rate):0;
+  fuel=litres>0?num($('#dFuelAmt').value):0;
+  if(litres>0&&!(fuel>0))return dErr('ডিজেলের মোট টাকা লিখুন, অথবা দর দিন।');
   var dsel=$('#dSiteSel').value,dnew=$('#dSiteNew').value.trim();
   if(dsel==='__new'&&!dnew)return dErr('সাইটের নাম লিখুন।');
   if(hours>0&&!dsel)return dErr('কোন সাইটে কাজ করেছেন বাছুন। তালিকায় না থাকলে "তালিকায় নেই" বেছে নাম লিখুন।');
@@ -770,7 +801,7 @@ function openSheet(type,rec,ap,opts){
   $('#fLitres').value=src&&isE?shown(src.litres):'';
   $('#fFuel').value=src&&isE?shown(src.fuel_cost):'';
   $('#fSrc').value=src&&isE?(src.fuel_src||''):'';
-  setFPay(src&&isE?(src.fuel_pay||''):'');
+  setFPay(ap?(+ap.fuel_cost>0?(ap.fuel_src?'due':'cash'):''):(src&&isE?(src.fuel_pay||''):''));
   $('#fDeposit').value=rec&&isE?shown(rec.deposit):'';
   $('#fDeposit').classList.toggle('key',!!ap);
   fillDrvSel(ap?ap.driver_id:rec?(rec.driver_id||''):lastDriverFor(F.veku));
@@ -804,7 +835,7 @@ async function submitSheet(ev){
       deposit:num($('#fDeposit').value),driver_wage:num($('#fDriver').value),driver_id:$('#fDrvSel').value||null,remarks:$('#fRemarks').value.trim()};
     if(ap&&$('#fDeposit').value.trim()==='')return showErr('সাইট থেকে কত টাকা জমা হয়েছে লিখুন। কিছু না পেলে ০ লিখুন।');
     if(!(data.hours||data.litres||data.fuel_cost||data.deposit||data.driver_wage))return showErr('অন্তত একটি ঘর পূরণ করুন: ঘণ্টা, ডিজেল, জমা বা ড্রাইভারের মজুরি।');
-    if(data.fuel_cost>0&&!data.fuel_pay)return showErr('ডিজেলের টাকা নগদ দেওয়া হয়েছে, না বাকি আছে, বাছুন।');
+    if(data.fuel_cost>0&&!data.fuel_pay)data.fuel_pay=data.fuel_src?'due':'cash';
     if(data.fuel_pay==='due'&&!data.fuel_src)return showErr('কোন দোকান থেকে বাকিতে ডিজেল নেওয়া হয়েছে লিখুন।');
     if(data.fuel_pay==='due'&&!(data.fuel_cost>0))return showErr('বাকিতে নেওয়া ডিজেলের টাকা লিখুন, তা না হলে দোকানের বাকি হিসাব হবে না।');
     if(data.driver_wage>0&&!data.driver_id)return showErr('মজুরি কোন ড্রাইভারের, বেছে নিন। তালিকায় না থাকলে "ড্রাইভার" পাতায় আগে যোগ করুন।');
@@ -893,7 +924,7 @@ function openMini(mode,o){
     title=driverName(M.id)+'-কে টাকা দিলেন';
     body='<p class="from">এখন বাকি পাবে: '+tk(dBal(M.id).bal)+'</p>'+payFields(o.rec);M.rec=o.rec||null;if(o.rec)del='মুছে ফেলুন';
   }else if(mode==='pay-shop'){
-    title=M.shop+'-এ বাকি শোধ';
+    title=M.shop+'-কে টাকা দিলাম';
     body='<p class="from">এখন বাকি আছে: '+tk(shopBal(M.shop).bal)+'</p>'+payFields(o.rec);M.rec=o.rec||null;if(o.rec)del='মুছে ফেলুন';
   }else if(mode==='shop-new'){
     title='দোকান বা পাম্প যোগ করুন';
@@ -1139,6 +1170,7 @@ document.addEventListener('click',function(e){
   if((x=t.closest('tr[data-sentry]'))){sentryOpen(x);return;}
   if((x=t.closest('[data-copy]'))){var el=document.getElementById(x.dataset.copy);if(el)copyText(el.textContent,el);return;}
   if((x=t.closest('[data-rm]'))){S.ownersDraft.owners.splice(+x.dataset.rm,1);S.ownersDirty=true;renderOwnersPanel();return;}
+  if((x=t.closest('[data-apgo]'))){quickApprove(x.dataset.apgo,x);return;}
   if((x=t.closest('[data-approve]'))){var pr=S.pending.filter(function(y){return y.id===x.dataset.approve;})[0];if(pr)openSheet('entry',null,pr);return;}
   if((x=t.closest('[data-add]'))){openSheet(x.dataset.add,null);return;}
   if((x=t.closest('[data-go]'))){S.tab=x.dataset.go;if(x.dataset.veku)S.veku=x.dataset.veku;render();window.scrollTo(0,0);return;}
@@ -1159,6 +1191,7 @@ document.addEventListener('click',function(e){
 });
 document.addEventListener('change',function(e){if(e.target&&e.target.id==='mLogin'){$('#mPwWrap').hidden=!e.target.checked;if(e.target.checked&&!$('#mPass').value)$('#mPass').value=genPw();}});
 document.addEventListener('keydown',function(e){
+  if(e.key==='Enter'&&e.target&&e.target.dataset&&e.target.dataset.apdep){e.preventDefault();var bt=document.querySelector('[data-apgo="'+e.target.dataset.apdep+'"]');if(bt)quickApprove(e.target.dataset.apdep,bt);return;}
   if(!(e.key==='Enter'||e.key===' ')||!e.target.matches)return;
   var t=e.target;
   if(t.matches('tr[data-id]')){e.preventDefault();rowOpen(t);}
@@ -1169,6 +1202,7 @@ document.addEventListener('keydown',function(e){
   else if(t.matches('tr[data-sitego]')){e.preventDefault();siteGo(t.dataset.sitego);}
   else if(t.matches('tr[data-sentry]')){e.preventDefault();sentryOpen(t);}
 });
+$('#main').addEventListener('input',function(e){if(e.target&&e.target.dataset&&e.target.dataset.apdep)S.apDep[e.target.dataset.apdep]=e.target.value;});
 $('#main').addEventListener('input',function(e){
   var el=e.target,d=S.ownersDraft;if(!d||S.tab!=='owners')return;
   if(el.dataset.k){var o=d.owners[+el.dataset.i];if(!o)return;o[el.dataset.k]=el.dataset.k==='name'?el.value:num(el.value);markOwnersDirty();}
