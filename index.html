@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ভেকুর হিসাব খাতা</title>
+<meta name="description" content="দুই ভেকুর দৈনিক হিসাব, মেরামত খরচ, ড্রাইভারের মজুরি, ডিজেলের বাকি আর মালিকদের ভাগ।">
+<meta name="theme-color" content="#1D232A">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ভেকু হিসাব">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anek+Bangla:wdth,wght@75..125,400..800&family=Hind+Siliguri:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: dark machine-cab header band (sticky, scrollable tabs) over a steel-grey floor; one 980px column; ledgers scroll inside their own frames */
+:root{
+  --bg:#ECEEF0; --surface:#FFFFFF; --surface-2:#F4F5F7; --ink:#1A1F25; --muted:#5B6570; --line:#D6DBE0; --line-strong:#AEB6BF;
+  --cab:#1D232A; --cab-2:#2A323B; --cab-line:#3A434D; --cab-ink:#F1F2F3; --cab-muted:#A9B2BC;
+  --amber:#E8A20C; --amber-ink:#7A4D00; --amber-soft:#FBEFD0; --amber-on:#1A1F25;
+  --blue:#2B679C; --blue-soft:#DDE8F2; --blue-on:#FFFFFF;
+  --good:#1E7A4C; --good-soft:#DCEFE4; --bad:#B0372B; --bad-soft:#F6E0DD;
+  --seg-fuel:#56616D; --seg-driver:#9AA5B1; --seg-repair:#C2554A; --seg-profit:#2E9A63;
+  --shadow:0 1px 2px rgba(20,26,33,.06),0 4px 14px rgba(20,26,33,.06);
+  --f-display:"Anek Bangla","Hind Siliguri","Noto Sans Bengali",system-ui,sans-serif;
+  --f-body:"Hind Siliguri","Noto Sans Bengali",system-ui,sans-serif;
+  --r:12px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#121518; --surface:#1B2026; --surface-2:#22282F; --ink:#E6E9EC; --muted:#9AA4AE; --line:#2E353D; --line-strong:#4A535D;
+    --cab:#0C0F12; --cab-2:#1A1F25; --cab-line:#2E353D; --cab-ink:#F1F2F3; --cab-muted:#8F99A3;
+    --amber:#F0B02A; --amber-ink:#F4C55E; --amber-soft:#3A2D10; --amber-on:#14171A;
+    --blue:#5E9DD3; --blue-soft:#182A3B; --blue-on:#0E1114;
+    --good:#5CC58E; --good-soft:#15301F; --bad:#EE7D70; --bad-soft:#3A1D1A;
+    --seg-fuel:#7D8996; --seg-driver:#4B5560; --seg-repair:#D8695D; --seg-profit:#46B57B;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 15px/1.6 var(--f-body)}
+[hidden]{display:none!important}
+img{max-width:100%}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;line-height:1.25}
+p{margin:0}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+
+/* cab header */
+.cab{position:sticky;top:0;z-index:20;background:var(--cab);color:var(--cab-ink);color-scheme:dark;padding-top:env(safe-area-inset-top,0px)}
+.cab-inner{max-width:980px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:10px 0}
+.cab-inner.solo{padding-block:10px 12px}
+.cab-top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 14px}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.brand svg{width:32px;height:32px;color:var(--amber);flex:none}
+.brand h1{font-size:19px;font-weight:700;font-stretch:112%;letter-spacing:.01em;color:var(--cab-ink)}
+.brand-sub{font-size:12px;color:var(--cab-muted);line-height:1.3}
+.period{display:flex;gap:8px}
+.period select{appearance:none;-webkit-appearance:none;background:var(--cab-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23A9B2BC' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 10px center;border:1px solid var(--cab-line);color:var(--cab-ink);border-radius:8px;padding:6px 28px 6px 10px;font:500 14.5px/1.3 var(--f-body);min-height:38px;cursor:pointer}
+.cab-btn{background:var(--cab-2);border:1px solid var(--cab-line);color:var(--cab-ink);border-radius:8px;padding:6px 12px;font:500 14px/1.3 var(--f-body);min-height:38px;cursor:pointer}
+.tabs{display:flex;margin-top:8px;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tabs button{flex:1 0 auto;background:none;border:0;padding:10px 11px;color:var(--cab-muted);font:500 14px/1.3 var(--f-body);border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap}
+.tabs button[aria-selected="true"]{color:var(--cab-ink);border-bottom-color:var(--amber);font-weight:600}
+.badge{display:inline-grid;place-items:center;min-width:19px;height:19px;padding:0 5px;margin-left:5px;border-radius:10px;background:var(--amber);color:var(--amber-on);font:700 12px/1 var(--f-display);vertical-align:1px}
+
+/* page */
+.wrap{max-width:980px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:18px calc(110px + env(safe-area-inset-bottom,0px));display:grid;gap:18px}
+#main,#top{display:grid;gap:18px;min-width:0}
+#top:empty,#banner:empty,#main:empty{display:none}
+.eyebrow{font-size:12.5px;letter-spacing:.03em;color:var(--muted);font-weight:500}
+.muted{color:var(--muted)}
+
+.banner{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 14px;padding:10px 14px;border-radius:10px;background:var(--surface);border:1px solid var(--line);font-size:14px}
+.banner.wait{background:var(--amber-soft);border-color:var(--amber)}
+.banner.bad{background:var(--bad-soft);border-color:var(--bad)}
+
+.hero{padding:2px 2px 0}
+.big{font-family:var(--f-display);font-size:clamp(34px,9vw,46px);font-weight:700;font-stretch:112%;line-height:1.1;margin:4px 0 4px;font-variant-numeric:tabular-nums}
+.big.pos{color:var(--good)} .big.neg{color:var(--bad)} .big.zero{color:var(--ink)}
+.hero-sub{color:var(--muted);font-size:14px;display:flex;flex-wrap:wrap;gap:2px 14px}
+.hero-sub b{color:var(--ink);font-weight:600;font-family:var(--f-display)}
+
+.vgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:14px}
+.vcard,.panel,.pcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:grid;gap:14px;box-shadow:var(--shadow);min-width:0;align-content:start}
+.pcard{padding:14px;gap:10px}
+.pcard.wide{grid-column:1/-1}
+.vhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.vhead h3{font-size:18px;font-weight:650}
+.vhead .days{margin-left:auto;font-size:13px;color:var(--muted)}
+.plate{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:6px;font:700 15px/1 var(--f-display);flex:none}
+.plate.v1{background:var(--amber);color:var(--amber-on)}
+.plate.v2{background:var(--blue);color:var(--blue-on)}
+.kv3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.kv3>div{display:grid;gap:1px;min-width:0}
+.kv3 span{font-size:12.5px;color:var(--muted)}
+.kv3 b{font:650 clamp(15px,4.4vw,19px)/1.25 var(--f-display);font-stretch:92%;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pos{color:var(--good)} .neg{color:var(--bad)}
+.barbox{display:grid;gap:8px}
+.bar{position:relative;display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--surface-2);border:1px solid var(--line)}
+.seg{height:100%}
+.seg.fuel{background:var(--seg-fuel)} .seg.driver{background:var(--seg-driver)} .seg.repair{background:var(--seg-repair)} .seg.profit{background:var(--seg-profit)}
+.mark{position:absolute;top:0;bottom:0;width:2px;background:var(--ink)}
+.legend{display:flex;flex-wrap:wrap;gap:2px 12px;font-size:12.5px;color:var(--muted);margin:0;padding:0;list-style:none}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px}
+.facts{display:grid;margin:0;font-size:14px}
+.facts>div{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px dotted var(--line-strong)}
+.facts>div:last-child{border-bottom:0}
+.facts dt{color:var(--muted)}
+.facts dd{margin:0;text-align:right;font-family:var(--f-display);font-weight:550;font-variant-numeric:tabular-nums;white-space:nowrap}
+.linkbtn{justify-self:start;background:none;border:0;padding:4px 0;color:var(--ink);font-weight:600;font-size:14px;cursor:pointer;text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:4px}
+
+.panel h2{font-size:18px;font-weight:650}
+.panel-head{display:grid;gap:2px}
+.olist{list-style:none;margin:0;padding:0;display:grid}
+.olist li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:0 12px;padding:10px 0;border-top:1px solid var(--line)}
+.oname{font-weight:600}
+.oamt{font:650 17px/1.4 var(--f-display);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.odetail{grid-column:1/-1;font-size:12.5px;color:var(--muted)}
+.warn{padding:8px 12px;border-radius:8px;background:var(--bad-soft);color:var(--bad);font-size:13.5px}
+.note{padding:10px 12px;border-radius:8px;background:var(--surface-2);font-size:13.5px}
+
+.plist{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:12px}
+.phead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.phead b{font-weight:650}
+.pnums{display:flex;gap:22px;flex-wrap:wrap}
+.pnums span{display:grid;font-size:12.5px;color:var(--muted)}
+.pnums b{font:650 22px/1.15 var(--f-display);color:var(--ink);font-variant-numeric:tabular-nums}
+.fuelline{font-size:13.5px;padding:6px 10px;border-radius:8px;background:var(--surface-2)}
+.st{display:inline-block;font-size:12px;font-weight:600;padding:1px 9px;border-radius:999px;white-space:nowrap}
+.st.pending,.st.due{background:var(--amber-soft);color:var(--amber-ink)}
+.st.approved,.st.cash,.st.on{background:var(--good-soft);color:var(--good)}
+.st.rejected{background:var(--bad-soft);color:var(--bad)}
+.st.plain{background:var(--surface-2);color:var(--muted)}
+.steps{margin:0;padding-left:1.4em;display:grid;gap:6px}
+.dlist{list-style:none;margin:0;padding:0;display:grid}
+.ditem{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:0 10px;align-items:center;padding:10px 6px;border-top:1px solid var(--line)}
+.ditem.click{cursor:pointer;border-radius:8px}
+.ditem.click:hover{background:var(--surface-2)}
+.ditem .dd{font-weight:600}
+.ditem .df{font-size:13px;color:var(--muted)}
+.cred{display:grid;gap:4px;padding:12px;border-radius:10px;background:var(--surface-2);border:1px solid var(--line-strong);font-size:14.5px}
+.cred b{font-family:var(--f-display);font-size:16px;user-select:all;overflow-wrap:anywhere}
+
+/* ledger */
+.vswitch{display:inline-flex;gap:4px;padding:4px;background:var(--surface);border:1px solid var(--line);border-radius:12px;justify-self:start;max-width:100%}
+.vswitch button{display:flex;align-items:center;gap:8px;border:0;background:none;padding:6px 14px 6px 6px;border-radius:9px;cursor:pointer;color:var(--muted);font-weight:500;min-width:0}
+.vswitch button span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vswitch button.v1[aria-selected="true"]{background:var(--amber-soft);color:var(--ink);font-weight:650}
+.vswitch button.v2[aria-selected="true"]{background:var(--blue-soft);color:var(--ink);font-weight:650}
+.ledger-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:10px 24px}
+.ledger-head h2{font-size:20px;font-weight:650}
+.meta{display:flex;flex-wrap:wrap;gap:4px 22px;margin:0}
+.meta dt{font-size:12px;color:var(--muted)}
+.meta dd{margin:0;font-weight:500}
+.tbl-wrap{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);-webkit-overflow-scrolling:touch}
+table.khata{width:100%;min-width:700px;border-collapse:separate;border-spacing:0;font-size:14px}
+table.khata.narrow{min-width:520px}
+table.khata.stmt{min-width:0}
+.khata th{text-align:left;font-weight:600;font-size:12.5px;padding:10px;border-bottom:1px solid var(--line-strong);background:var(--surface-2);line-height:1.3;vertical-align:bottom}
+.khata th small{display:block;font-weight:400;color:var(--muted);font-size:11px;letter-spacing:.02em;margin-top:2px}
+.khata td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+.khata.stmt th,.khata.stmt td{padding:8px}
+.khata .n{text-align:right;font-family:var(--f-display);font-variant-numeric:tabular-nums;white-space:nowrap}
+.khata th.n{font-family:var(--f-body)}
+.khata .sd{white-space:nowrap;color:var(--muted)}
+.khata .c1{position:sticky;left:0;z-index:1;background:var(--surface);border-right:1px solid var(--line);min-width:96px}
+.khata thead .c1,.khata tfoot .c1{background:var(--surface-2)}
+.khata td.rm{min-width:160px;color:var(--muted)}
+.khata td.desc{min-width:170px}
+.khata tbody tr.click{cursor:pointer}
+.khata tbody tr.click:hover td{background:var(--surface-2)}
+.khata tfoot td{font-weight:700;background:var(--surface-2);border-top:1px solid var(--line-strong);border-bottom:3px double var(--line-strong)}
+.sl{display:inline-block;min-width:1.7em;color:var(--muted);font-size:12px;font-family:var(--f-display)}
+.dsub{display:block;font-size:12px;color:var(--muted);padding-left:1.7em;white-space:nowrap}
+.by{display:block;font-size:12px}
+.chip{display:inline-block;font-size:12px;padding:0 8px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);color:var(--muted);white-space:nowrap;margin-right:6px}
+.below{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
+
+/* buttons & forms */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border-radius:10px;padding:8px 16px;font-weight:600;font-size:14.5px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);cursor:pointer;min-height:42px;text-decoration:none}
+.btn.primary{background:var(--amber);border-color:var(--amber);color:var(--amber-on)}
+.btn.ghost{background:transparent}
+.btn.small{min-height:34px;padding:4px 12px;font-size:13.5px}
+.btn.wide{width:100%}
+.btn.danger{color:var(--bad);border-color:transparent;background:transparent;padding-inline:8px}
+.btn.danger.armed{background:var(--bad);color:var(--surface);border-color:var(--bad)}
+.btn:disabled{opacity:.5;cursor:default}
+.icon-btn{display:inline-grid;place-items:center;width:40px;height:40px;border:0;border-radius:9px;background:transparent;color:var(--muted);cursor:pointer;font-size:18px;flex:none}
+.icon-btn:hover{background:var(--surface-2)}
+.field{display:grid;gap:4px;min-width:0;margin:0;border:0;padding:0}
+.field>span,.field>legend{font-size:13px;font-weight:600;color:var(--ink);padding:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.field em{font-style:normal;font-weight:400;color:var(--muted);font-size:11.5px}
+.field input,.field select{width:100%;padding:9px 12px;border:1px solid var(--line-strong);border-radius:9px;background:var(--surface);color:var(--ink);font:500 16px/1.4 var(--f-body);min-height:44px}
+.field input.num{font-family:var(--f-display);font-variant-numeric:tabular-nums}
+.field input.key{border-color:var(--amber);background:var(--amber-soft)}
+.field input:focus,.field select:focus{border-color:var(--amber);outline:2px solid var(--amber);outline-offset:0}
+.field input:disabled{background:var(--surface-2);color:var(--muted)}
+.pw{position:relative}
+.pw input{padding-right:64px}
+.pw button{position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:none;color:var(--muted);font-size:13px;padding:8px;cursor:pointer}
+fieldset.sub{border:1px solid var(--line);border-radius:10px;padding:10px 12px 12px;display:grid;gap:10px;background:var(--surface-2)}
+fieldset.sub>legend{padding:0 6px;margin-left:-6px}
+fieldset.sub input,fieldset.sub select{background:var(--surface)}
+.check{display:flex;gap:10px;align-items:flex-start;font-size:14px;cursor:pointer}
+.check input{width:20px;height:20px;margin-top:2px;accent-color:var(--amber);flex:none}
+.hint{font-size:12px;color:var(--muted);line-height:1.45}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start}
+.seg2{display:flex;gap:6px;flex-wrap:wrap}
+.seg2 button{flex:1 1 0;min-width:0;min-height:42px;border:1px solid var(--line-strong);background:var(--surface);border-radius:9px;padding:6px 10px;cursor:pointer;font-weight:500;display:flex;align-items:center;justify-content:center;gap:8px}
+.seg2 button[aria-pressed="true"]{background:var(--amber-soft);border-color:var(--amber);box-shadow:inset 0 0 0 1px var(--amber);font-weight:650}
+.seg2 button.v2[aria-pressed="true"]{background:var(--blue-soft);border-color:var(--blue);box-shadow:inset 0 0 0 1px var(--blue)}
+.typeseg{background:var(--surface-2);padding:4px;border-radius:12px;gap:4px}
+.typeseg button{border-color:transparent;background:transparent}
+.typeseg button[aria-pressed="true"]{background:var(--surface);border-color:var(--line-strong);box-shadow:var(--shadow)}
+
+.orows{display:grid}
+.orow{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,.8fr) minmax(0,.8fr) auto;gap:8px;align-items:end;padding:10px 0;border-top:1px solid var(--line)}
+@media (max-width:540px){.orow{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto}.orow .o-name{grid-column:1/-1}}
+.osum{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:13.5px;padding-top:8px;border-top:1px solid var(--line)}
+.ok{color:var(--good);font-weight:600} .bad{color:var(--bad);font-weight:600}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+
+.empty{background:var(--surface);border:1px dashed var(--line-strong);border-radius:var(--r);padding:22px 18px;display:grid;gap:10px;justify-items:start}
+.empty svg{width:52px;height:52px;color:var(--amber)}
+.empty h2{font-size:19px;font-weight:650}
+.empty p{color:var(--muted);max-width:60ch}
+.loading{display:grid;justify-items:center;gap:10px;padding:56px 0;color:var(--muted)}
+.loading svg{width:52px;height:52px;color:var(--amber)}
+
+.authbox{max-width:440px;width:100%;justify-self:center;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px 18px;display:grid;gap:16px;box-shadow:var(--shadow)}
+.authbox h2{font-size:21px;font-weight:700}
+.authbox form{display:grid;gap:14px}
+
+.fab{position:fixed;right:calc(16px + env(safe-area-inset-right,0px));bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:15;display:flex;align-items:center;gap:8px;background:var(--amber);color:var(--amber-on);border:0;border-radius:999px;padding:12px 20px 12px 16px;font:700 15px/1.2 var(--f-body);box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer}
+.fab svg{width:20px;height:20px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(86px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:500;z-index:40;max-width:calc(100% - 32px);box-shadow:var(--shadow)}
+
+/* sheets */
+dialog.sheetdlg{border:0;padding:0;width:min(580px,100%);max-width:100%;max-height:calc(100% - 20px);margin:auto auto 0;border-radius:18px 18px 0 0;background:var(--surface);color:var(--ink);box-shadow:0 -8px 30px rgba(0,0,0,.25)}
+@media (min-width:640px){dialog.sheetdlg{margin:auto;border-radius:18px;max-height:calc(100% - 48px)}}
+dialog.sheetdlg::backdrop{background:rgba(8,10,13,.5)}
+.sheetform{display:grid;gap:14px;padding-block:14px calc(16px + env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.sheet-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.sheet-head h2{font-size:19px;font-weight:650}
+.from{padding:8px 12px;border-radius:8px;background:var(--surface-2);font-size:13.5px}
+.form-err{padding:8px 12px;border-radius:8px;background:var(--bad-soft);color:var(--bad);font-size:13.5px}
+.sheet-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:4px}
+.grow{flex:1}
+.grp{display:grid;gap:14px}
+
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+<header class="cab">
+  <div class="cab-inner solo" id="cabInner">
+    <div class="cab-top">
+      <div class="brand">
+        <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="23" width="17" height="6" rx="3"/><path d="M5 23v-6h9.5l1.5 3v3"/><path d="M6.5 17v-5.5h5l2 5.5"/><path d="M15 19l6-10.5 6.5 6"/><path d="M27.5 14.5l1 5.5h-5l1.5-3.5"/></svg>
+        <div>
+          <h1>ভেকুর হিসাব খাতা</h1>
+          <div class="brand-sub" id="brandSub"></div>
+        </div>
+      </div>
+      <div class="period" id="period" hidden>
+        <select id="selMonth" aria-label="মাস"></select>
+        <select id="selYear" aria-label="বছর"></select>
+      </div>
+      <button type="button" class="cab-btn" id="drvLogout" hidden>বের হন</button>
+    </div>
+    <nav class="tabs" id="tabs" role="tablist" aria-label="পাতা" hidden>
+      <button type="button" role="tab" data-tab="sum" aria-selected="true">সারাংশ</button>
+      <button type="button" role="tab" data-tab="approve" aria-selected="false">অনুমোদন<span class="badge" id="pendBadge" hidden></span></button>
+      <button type="button" role="tab" data-tab="daily" aria-selected="false">দৈনিক খাতা</button>
+      <button type="button" role="tab" data-tab="repair" aria-selected="false">মেরামত</button>
+      <button type="button" role="tab" data-tab="drivers" aria-selected="false">ড্রাইভার</button>
+      <button type="button" role="tab" data-tab="diesel" aria-selected="false">ডিজেলের বাকি</button>
+      <button type="button" role="tab" data-tab="owners" aria-selected="false">মালিক ও সেটিংস</button>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div id="banner"></div>
+
+  <section class="authbox" id="auth" hidden>
+    <form id="loginForm" novalidate>
+      <div class="panel-head"><h2>লগইন করুন</h2><p class="hint">মালিক যে মোবাইল নম্বর আর পাসওয়ার্ড দিয়েছেন, সেটি দিন।</p></div>
+      <label class="field"><span>মোবাইল নম্বর</span><input type="tel" id="lPhone" inputmode="tel" autocomplete="username" placeholder="০১XXXXXXXXX"></label>
+      <label class="field"><span>পাসওয়ার্ড</span><span class="pw"><input type="password" id="lPass" autocomplete="current-password"><button type="button" data-pw="lPass">দেখুন</button></span></label>
+      <p class="form-err" id="lErr" role="alert" hidden></p>
+      <button type="submit" class="btn primary wide" id="lBtn">লগইন</button>
+      <p class="hint">পাসওয়ার্ড ভুলে গেলে মালিককে বলুন, তিনি নতুন পাসওয়ার্ড দিয়ে দেবেন।</p>
+    </form>
+    <form id="setupForm" novalidate hidden>
+      <div class="panel-head"><h2>মালিকের অ্যাকাউন্ট খুলুন</h2><p class="hint">এটা প্রথমবার, একবারই করতে হবে। এরপর এই মোবাইল নম্বর আর পাসওয়ার্ড দিয়ে লগইন করবেন।</p></div>
+      <label class="field"><span>আপনার নাম</span><input type="text" id="sName" autocomplete="name"></label>
+      <label class="field"><span>মোবাইল নম্বর</span><input type="tel" id="sPhone" inputmode="tel" autocomplete="username" placeholder="০১XXXXXXXXX"></label>
+      <label class="field"><span>পাসওয়ার্ড <em>কমপক্ষে ৬ অক্ষর</em></span><span class="pw"><input type="password" id="sPass" autocomplete="new-password"><button type="button" data-pw="sPass">দেখুন</button></span></label>
+      <label class="field"><span>চালু করার কোড</span><input type="text" id="sCode" autocomplete="off" autocapitalize="characters"></label>
+      <p class="form-err" id="sErr" role="alert" hidden></p>
+      <button type="submit" class="btn primary wide" id="sBtn">অ্যাকাউন্ট খুলুন</button>
+    </form>
+  </section>
+
+  <div id="top"></div>
+
+  <section class="panel" id="drv" hidden>
+    <div class="panel-head"><h2 id="drvTitle">আজকের কাজ লিখুন</h2><p class="hint">লিখে "পাঠিয়ে দিন" চাপুন। মালিক দেখে অনুমোদন করলে খাতায় উঠবে।</p></div>
+    <form id="drvForm" class="grp" novalidate>
+      <fieldset class="field"><legend>কোন ভেকু চালিয়েছেন</legend><div class="seg2" id="dVekuSeg"></div></fieldset>
+      <div class="grid2">
+        <label class="field"><span>তারিখ</span><input type="date" id="dDate"></label>
+        <label class="field"><span>কত ঘণ্টা চালিয়েছেন</span><input type="text" class="num" id="dHours" inputmode="decimal" autocomplete="off" placeholder="যেমন ৭.৫"></label>
+      </div>
+      <fieldset class="field sub">
+        <legend>ডিজেল নিলে <em>না নিলে খালি রাখুন</em></legend>
+        <div class="grid2">
+          <label class="field"><span>কত লিটার</span><input type="text" class="num" id="dLitres" inputmode="decimal" autocomplete="off" placeholder="যেমন ২০০"></label>
+          <label class="field"><span>কত টাকা <em>মেমো দেখে</em></span><input type="text" class="num" id="dFuel" inputmode="decimal" autocomplete="off" placeholder="৳"></label>
+        </div>
+        <label class="field"><span>কোথা থেকে নিলেন</span><input type="text" id="dSrc" list="shopList" autocomplete="off" placeholder="দোকান বা পাম্পের নাম"></label>
+        <div class="seg2" id="dPaySeg" role="group" aria-label="টাকা দেওয়া হয়েছে কি না">
+          <button type="button" data-pay="cash" aria-pressed="false">নগদ দিয়েছি</button>
+          <button type="button" data-pay="due" aria-pressed="false">বাকিতে নিয়েছি</button>
+        </div>
+      </fieldset>
+      <label class="field"><span>মন্তব্য <em>দরকার হলে</em></span><input type="text" id="dRemarks" autocomplete="off" placeholder="যেমন: বৃষ্টিতে আধা দিন কাজ"></label>
+      <p class="form-err" id="dErr" role="alert" hidden></p>
+      <div class="sheet-actions">
+        <button type="button" class="btn danger" id="dDel" hidden>মুছে ফেলুন</button>
+        <span class="grow"></span>
+        <button type="button" class="btn ghost" id="dCancel" hidden>বাতিল</button>
+        <button type="submit" class="btn primary" id="dSave">পাঠিয়ে দিন</button>
+      </div>
+    </form>
+  </section>
+
+  <main id="main" aria-live="polite">
+    <div class="loading"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="23" width="17" height="6" rx="3"/><path d="M5 23v-6h9.5l1.5 3v3"/><path d="M6.5 17v-5.5h5l2 5.5"/><path d="M15 19l6-10.5 6.5 6"/><path d="M27.5 14.5l1 5.5h-5l1.5-3.5"/></svg><p>খাতা খোলা হচ্ছে…</p></div>
+  </main>
+</div>
+<datalist id="shopList"></datalist>
+
+<button type="button" class="fab" id="fab" hidden><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg><span id="fabLabel">হিসাব লিখুন</span></button>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<dialog id="sheet" class="sheetdlg" aria-labelledby="sheetTitle">
+  <form id="sheetForm" class="sheetform" novalidate>
+    <div class="sheet-head">
+      <h2 id="sheetTitle">নতুন হিসাব লিখুন</h2>
+      <button type="button" class="icon-btn" id="sheetClose" aria-label="বন্ধ করুন">✕</button>
+    </div>
+    <p class="from" id="fromLine" hidden></p>
+    <div class="seg2 typeseg" id="typeSeg">
+      <button type="button" data-type="entry" aria-pressed="true">দৈনিক হিসাব</button>
+      <button type="button" data-type="repair" aria-pressed="false">মেরামত / অন্যান্য খরচ</button>
+    </div>
+    <fieldset class="field">
+      <legend>কোন ভেকু</legend>
+      <div class="seg2" id="vekuSeg"></div>
+    </fieldset>
+    <div class="grid2">
+      <label class="field"><span>তারিখ <em>Date</em></span><input type="date" id="fDate" required></label>
+      <label class="field" data-group="entry"><span>সাইটের নাম</span><input type="text" id="fSite" autocomplete="off" placeholder="যেমন: পুকুর খনন"></label>
+      <fieldset class="field" data-group="repair" style="grid-column:1/-1">
+        <legend>খরচের ধরন</legend>
+        <div class="seg2" id="kindSeg">
+          <button type="button" data-kind="মেরামত" aria-pressed="true">মেরামত</button>
+          <button type="button" data-kind="যন্ত্রাংশ" aria-pressed="false">যন্ত্রাংশ</button>
+          <button type="button" data-kind="অন্যান্য" aria-pressed="false">অন্যান্য</button>
+        </div>
+      </fieldset>
+    </div>
+    <div class="grp" data-group="entry">
+      <div class="grid2">
+        <label class="field"><span>সময় (ঘণ্টা) <em>Time</em></span><input type="text" class="num" id="fHours" inputmode="decimal" autocomplete="off" placeholder="০"></label>
+        <label class="field"><span>জমার পরিমাণ (৳) <em>Deposit</em></span><input type="text" class="num" id="fDeposit" inputmode="decimal" autocomplete="off" placeholder="০"></label>
+      </div>
+      <fieldset class="field sub">
+        <legend>ডিজেল <em>নেওয়া না হলে খালি রাখুন</em></legend>
+        <div class="grid2">
+          <label class="field"><span>লিটার</span><input type="text" class="num" id="fLitres" inputmode="decimal" autocomplete="off" placeholder="০"></label>
+          <label class="field"><span>টাকা (৳)</span><input type="text" class="num" id="fFuel" inputmode="decimal" autocomplete="off" placeholder="০"><small class="hint" id="fuelHint"></small></label>
+        </div>
+        <label class="field"><span>কোথা থেকে</span><input type="text" id="fSrc" list="shopList" autocomplete="off" placeholder="দোকান বা পাম্পের নাম"></label>
+        <div class="seg2" id="fPaySeg" role="group" aria-label="নগদ না বাকি">
+          <button type="button" data-pay="cash" aria-pressed="false">নগদ</button>
+          <button type="button" data-pay="due" aria-pressed="false">বাকি</button>
+        </div>
+      </fieldset>
+      <fieldset class="field sub">
+        <legend>ড্রাইভার</legend>
+        <div class="grid2">
+          <label class="field"><span>কে চালিয়েছে</span><select id="fDrvSel"></select></label>
+          <label class="field"><span>তার মজুরি (৳)</span><input type="text" class="num" id="fDriver" inputmode="decimal" autocomplete="off" placeholder="০"><small class="hint" id="wageHint"></small></label>
+        </div>
+      </fieldset>
+    </div>
+    <div class="grid2" data-group="repair">
+      <label class="field" style="grid-column:1/-1"><span>খরচের বিবরণ <em>Description</em></span><input type="text" id="fDesc" autocomplete="off" placeholder="যেমন: হাইড্রোলিক পাইপ বদল"></label>
+      <label class="field"><span>টাকা (৳) <em>Amount</em></span><input type="text" class="num" id="fAmount" inputmode="decimal" autocomplete="off" placeholder="০"></label>
+    </div>
+    <label class="field"><span>মন্তব্য <em>Remarks</em></span><input type="text" id="fRemarks" autocomplete="off"></label>
+    <p class="form-err" id="formErr" role="alert" hidden></p>
+    <div class="sheet-actions">
+      <button type="button" class="btn danger" id="delBtn" hidden>মুছে ফেলুন</button>
+      <span class="grow"></span>
+      <button type="button" class="btn ghost" id="cancelBtn">বাতিল</button>
+      <button type="submit" class="btn primary" id="saveBtn">সংরক্ষণ করুন</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="mini" class="sheetdlg" aria-labelledby="miniTitle">
+  <form id="miniForm" class="sheetform" novalidate>
+    <div class="sheet-head">
+      <h2 id="miniTitle">যোগ করুন</h2>
+      <button type="button" class="icon-btn" id="miniClose" aria-label="বন্ধ করুন">✕</button>
+    </div>
+    <div class="grp" id="miniBody"></div>
+    <p class="form-err" id="mErr" role="alert" hidden></p>
+    <div class="sheet-actions">
+      <button type="button" class="btn danger" id="mDel" hidden>মুছে ফেলুন</button>
+      <span class="grow"></span>
+      <button type="button" class="btn ghost" id="mCancel">বাতিল</button>
+      <button type="submit" class="btn primary" id="mSave">সংরক্ষণ করুন</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
