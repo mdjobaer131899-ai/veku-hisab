@@ -2,7 +2,9 @@
 
 দুই ভেকুর দৈনিক হিসাব, মেরামত খরচ, ড্রাইভারের মজুরি ও বাকি, ডিজেলের দোকানের বাকি আর পাঁচ মালিকের ভাগ রাখার ওয়েবসাইট।
 
-**সাইট:** https://mdjobaer131899-ai.github.io/veku-hisab/
+**সাইট:** https://veku-hisab.vercel.app/
+
+(একই সাইট GitHub Pages-এও আছে: https://mdjobaer131899-ai.github.io/veku-hisab/ — দুটো একই ডাটা দেখায়। `main` branch-এ পুশ করলে Vercel নিজে থেকে নতুন সংস্করণ চালু করে।)
 
 ## কে কী করতে পারে
 
