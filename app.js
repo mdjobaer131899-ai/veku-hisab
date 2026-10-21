@@ -264,6 +264,16 @@ function render(){
   var fab=$('#fab');
   fab.hidden=!isOwnerApp()||['sum','daily','repair'].indexOf(S.tab)<0;
   $('#fabLabel').textContent=S.tab==='repair'?'খরচ লিখুন':'হিসাব লিখুন';
+  setTimeout(ensureStmts,0);
+}
+var stmtLoading={};
+function ensureStmts(){
+  if(!isOwnerApp())return;
+  function go(key,fnc){if(stmtLoading[key])return;stmtLoading[key]=1;fnc().then(function(){delete stmtLoading[key];},function(){delete stmtLoading[key];});}
+  var d=S.openDriver,sh=S.openShop,si=S.openSite;
+  if(S.tab==='drivers'&&d&&!S.stmt[d])go('d'+d,function(){return loadDriverStmt(d);});
+  if(S.tab==='diesel'&&sh&&!S.shopStmt[sh])go('s'+sh,function(){return loadShopStmt(sh);});
+  if(S.tab==='sites'&&si&&!S.siteStmt[si])go('t'+si,function(){return loadSiteStmt(si);});
 }
 function loadingHTML(){return '<div class="loading">'+EXC+'<p>খাতা খোলা হচ্ছে…</p></div>';}
 function msgHTML(h,p,act){return '<section class="empty">'+EXC+'<h2>'+esc(h)+'</h2><p>'+esc(p)+'</p><div class="actions">'+(act||'')+'</div></section>';}
@@ -827,7 +837,6 @@ async function submitSheet(ev){
     var jobs=[reloadYear()];if(col==='entries')jobs.push(reloadBal());if(created)jobs.push(reloadSites());if(ap)jobs.push(qPending().then(function(r){S.pending=r||[];}));
     await Promise.all(jobs);
     render();
-    if(col==='entries'&&S.openSite)loadSiteStmt(S.openSite);
   }catch(e){showErr(errText(e));}
   finally{btn.disabled=false;btn.textContent=label;}
 }
@@ -973,8 +982,6 @@ async function submitMini(ev){
       if(M.rec)await q(sb.from(table).update(rec).eq('id',M.rec.id));
       else{if(mode==='pay-driver')rec.driver_id=M.id;else rec.shop=M.shop;await q(sb.from(table).insert(rec));}
       await reloadBal();
-      if(mode==='pay-driver'&&S.openDriver===M.id)loadDriverStmt(M.id);
-      if(mode==='pay-shop'&&S.openShop===M.shop)loadShopStmt(M.shop);
       toast('সংরক্ষিত হয়েছে');
     }else if(mode==='shop-new'){
       var nm=$('#mName').value.trim();if(!nm)return mErr('দোকান বা পাম্পের নাম লিখুন।');
@@ -1003,8 +1010,8 @@ async function delMini(){
   try{
     if(M.mode==='site-edit'){await q(sb.from('sites').delete().eq('id',M.site.id));await reloadSites();if(S.openSite===M.site.id)S.openSite=null;toast('সাইট মুছে ফেলা হয়েছে');}
     else if(M.mode==='driver-edit'){await q(sb.from('drivers').update({active:false}).eq('id',M.driver.id));await reloadDrivers();toast('তালিকা থেকে সরানো হয়েছে');}
-    else if(M.mode==='pay-driver'){await q(sb.from('driver_payments').delete().eq('id',M.rec.id));await reloadBal();if(S.openDriver===M.id)loadDriverStmt(M.id);toast('মুছে ফেলা হয়েছে');}
-    else if(M.mode==='pay-shop'){await q(sb.from('shop_payments').delete().eq('id',M.rec.id));await reloadBal();if(S.openShop===M.shop)loadShopStmt(M.shop);toast('মুছে ফেলা হয়েছে');}
+    else if(M.mode==='pay-driver'){await q(sb.from('driver_payments').delete().eq('id',M.rec.id));await reloadBal();toast('মুছে ফেলা হয়েছে');}
+    else if(M.mode==='pay-shop'){await q(sb.from('shop_payments').delete().eq('id',M.rec.id));await reloadBal();toast('মুছে ফেলা হয়েছে');}
     closeMini();render();
   }catch(e){mErr(errText(e));}
   finally{b.disabled=false;}
@@ -1093,7 +1100,7 @@ $('#tabs').addEventListener('click',function(e){
 });
 $('#fab').addEventListener('click',function(){openSheet(S.tab==='repair'?'repair':'entry',null);});
 function rowOpen(tr){var col=tr.dataset.col,id=tr.dataset.id;var rec=S[col].filter(function(x){return x.id===id;})[0];if(rec)openSheet(col==='entries'?'entry':'repair',rec);}
-function siteGo(id){S.tab='sites';S.openSite=id;render();window.scrollTo(0,0);if(!S.siteStmt[id])loadSiteStmt(id);}
+function siteGo(id){S.tab='sites';S.openSite=id;render();window.scrollTo(0,0);}
 function sentryOpen(tr){var rec=(S.siteStmt[S.openSite]||[]).filter(function(r){return r.id===tr.dataset.sentry;})[0];if(rec)openSheet('entry',rec);}
 function mineOpen(li){var rec=S.mine.filter(function(x){return x.id===li.dataset.mine;})[0];if(rec&&(rec.status||'pending')==='pending'){resetDrv(rec);window.scrollTo(0,0);$('#dHours').focus();}}
 function dpayOpen(el){var id=S.openDriver,rec=(S.stmt[id]||[]).filter(function(x){return x.id===el.dataset.dpay&&x.kind==='paid';})[0];if(rec)openMini('pay-driver',{id:id,rec:rec});}
@@ -1124,7 +1131,7 @@ document.addEventListener('click',function(e){
     else if(act==='my-stmt'){S.openMine=!S.openMine;render();}
     return;
   }
-  if((x=t.closest('[data-siteopen]'))){var sid=x.dataset.siteopen;S.openSite=S.openSite===sid?null:sid;render();if(S.openSite&&!S.siteStmt[sid])loadSiteStmt(sid);return;}
+  if((x=t.closest('[data-siteopen]'))){var sid=x.dataset.siteopen;S.openSite=S.openSite===sid?null:sid;render();return;}
   if((x=t.closest('[data-siteadd]'))){openSheet('entry',null,null,{siteId:x.dataset.siteadd});return;}
   if((x=t.closest('[data-siteedit]'))){openMini('site-edit',{site:siteBy(x.dataset.siteedit)});return;}
   if((x=t.closest('[data-sitecsv]'))){downloadSiteCSV(x.dataset.sitecsv);return;}
@@ -1138,11 +1145,11 @@ document.addEventListener('click',function(e){
   if((x=t.closest('.vswitch [data-veku]'))){S.veku=x.dataset.veku;render();return;}
   if((x=t.closest('[data-csv]'))){downloadCSV(x.dataset.csv);return;}
   if((x=t.closest('[data-dpaynew]'))){openMini('pay-driver',{id:x.dataset.dpaynew});return;}
-  if((x=t.closest('[data-dopen]'))){var did=x.dataset.dopen;S.openDriver=S.openDriver===did?null:did;render();if(S.openDriver&&!S.stmt[did])loadDriverStmt(did);return;}
+  if((x=t.closest('[data-dopen]'))){var did=x.dataset.dopen;S.openDriver=S.openDriver===did?null:did;render();return;}
   if((x=t.closest('[data-dedit]'))){openMini('driver-edit',{driver:driverBy(x.dataset.dedit)});return;}
   if((x=t.closest('[data-drestore]'))){q(sb.from('drivers').update({active:true}).eq('id',x.dataset.drestore)).then(reloadDrivers).then(function(){toast('ফিরিয়ে আনা হয়েছে');render();},function(err){toast(errText(err));});return;}
   if((x=t.closest('[data-spaynew]'))){openMini('pay-shop',{shop:x.dataset.spaynew});return;}
-  if((x=t.closest('[data-sopen]'))){var sn=x.dataset.sopen;S.openShop=S.openShop===sn?null:sn;render();if(S.openShop&&!S.shopStmt[sn])loadShopStmt(sn);return;}
+  if((x=t.closest('[data-sopen]'))){var sn=x.dataset.sopen;S.openShop=S.openShop===sn?null:sn;render();return;}
   if((x=t.closest('[data-sremove]'))){var s=clone(S.settings),nm=x.dataset.sremove;s.shops=s.shops.filter(function(z){return z!==nm;});saveSettings(s).then(function(){toast('তালিকা থেকে সরানো হয়েছে');render();},function(err){toast(errText(err));});return;}
   if((x=t.closest('tr[data-month]'))){S.month=+x.dataset.month;render();window.scrollTo(0,0);return;}
   if((x=t.closest('tr[data-id]'))){rowOpen(x);return;}
@@ -1205,7 +1212,6 @@ $('#delBtn').addEventListener('click',async function(){
       await q(sb.from(col).delete().eq('id',F.id));
       closeSheet();toast('হিসাব মুছে ফেলা হয়েছে');
       var jobs=[reloadYear()];if(col==='entries')jobs.push(reloadBal());await Promise.all(jobs);
-      if(col==='entries'&&S.openSite)loadSiteStmt(S.openSite);
     }
     render();
   }catch(e){showErr(errText(e));}
