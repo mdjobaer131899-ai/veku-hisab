@@ -293,3 +293,77 @@ grant execute on function public.is_owner(), public.my_driver_id(), public.my_ac
 -- ===== first-time setup code =====
 -- The owner account is created from the website with this one-time code.
 -- insert into public.app_setup (id, code) values (1, 'YOUR-CODE');
+
+-- ===== sites (added later) =====
+create table public.sites (
+  id uuid primary key default gen_random_uuid(),
+  name text not null check (length(trim(name)) > 0),
+  client text not null default '',
+  phone text not null default '',
+  address text not null default '',
+  rate numeric not null default 0,
+  status text not null default 'active' check (status in ('active','done')),
+  notes text not null default '',
+  created_at timestamptz not null default now()
+);
+alter table public.sites enable row level security;
+create policy sites_owner on public.sites for all to authenticated using ((select public.is_owner())) with check ((select public.is_owner()));
+
+alter table public.entries add column site_id uuid references public.sites(id) on delete set null;
+create index entries_site_idx on public.entries(site_id);
+alter table public.submissions add column site_id uuid references public.sites(id) on delete set null;
+alter table public.submissions add column site_name text not null default '';
+
+-- drivers see only the names of running sites
+create or replace function public.pub_info() returns jsonb
+language sql stable security definer set search_path = '' as $$
+  select jsonb_build_object(
+    'vekus', s.vekus,
+    'shops', to_jsonb(s.shops),
+    'sites', coalesce((select jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name) order by t.name) from public.sites t where t.status = 'active'), '[]'::jsonb)
+  ) from public.settings s where s.id = 1;
+$$;
+
+-- all-time totals per site
+create or replace function public.site_summary() returns table(site_id uuid, hours_v1 numeric, hours_v2 numeric, deposit numeric, days bigint, first_date date, last_date date, n bigint)
+language plpgsql stable security definer set search_path = '' as $$
+#variable_conflict use_column
+begin
+  if not public.is_owner() then raise exception 'not allowed' using errcode = '42501'; end if;
+  return query
+    select e.site_id,
+      coalesce(sum(e.hours) filter (where e.veku = 'v1'), 0),
+      coalesce(sum(e.hours) filter (where e.veku = 'v2'), 0),
+      coalesce(sum(e.deposit), 0),
+      count(distinct e.date) filter (where e.hours > 0),
+      min(e.date), max(e.date), count(*)
+    from public.entries e where e.site_id is not null group by e.site_id;
+end $$;
+
+create or replace function public.approve_submission(p_id uuid, p_entry jsonb) returns uuid
+language plpgsql security definer set search_path = '' as $$
+declare s public.submissions; new_id uuid;
+begin
+  if not public.is_owner() then raise exception 'not allowed' using errcode = '42501'; end if;
+  select * into s from public.submissions where id = p_id for update;
+  if not found then raise exception 'submission not found'; end if;
+  insert into public.entries (veku, date, site, site_id, hours, litres, fuel_cost, fuel_src, fuel_pay, deposit, driver_wage, driver_id, remarks, submission_id)
+  values (
+    p_entry->>'veku', (p_entry->>'date')::date, coalesce(p_entry->>'site', ''), nullif(p_entry->>'site_id', '')::uuid,
+    coalesce((p_entry->>'hours')::numeric, 0), coalesce((p_entry->>'litres')::numeric, 0),
+    coalesce((p_entry->>'fuel_cost')::numeric, 0), coalesce(p_entry->>'fuel_src', ''), coalesce(p_entry->>'fuel_pay', ''),
+    coalesce((p_entry->>'deposit')::numeric, 0), coalesce((p_entry->>'driver_wage')::numeric, 0),
+    nullif(p_entry->>'driver_id', '')::uuid, coalesce(p_entry->>'remarks', ''), p_id)
+  on conflict (submission_id) do update set
+    veku = excluded.veku, date = excluded.date, site = excluded.site, site_id = excluded.site_id, hours = excluded.hours, litres = excluded.litres,
+    fuel_cost = excluded.fuel_cost, fuel_src = excluded.fuel_src, fuel_pay = excluded.fuel_pay, deposit = excluded.deposit,
+    driver_wage = excluded.driver_wage, driver_id = excluded.driver_id, remarks = excluded.remarks
+  returning id into new_id;
+  update public.submissions set status = 'approved', decided_at = now() where id = p_id;
+  return new_id;
+end $$;
+
+revoke execute on function public.site_summary() from public, anon;
+grant execute on function public.site_summary() to authenticated;
+revoke execute on function public.pub_info() from public, anon;
+grant execute on function public.pub_info() to authenticated;
