@@ -52,11 +52,13 @@ function normSettings(s){
 
 /* ---------- supabase ---------- */
 var sb=null;
-try{if(window.supabase&&CFG.url&&CFG.key)sb=window.supabase.createClient(CFG.url,CFG.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storageKey:'veku-hisab-auth'}});}catch(e){sb=null;}
-async function q(p){var r=await p;if(r&&r.error)throw r.error;return r?r.data:null;}
+try{if(window.supabase&&CFG.url&&CFG.key)sb=window.supabase.createClient(CFG.url,CFG.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storageKey:'veku-hisab-auth',lock:function(name,timeout,fn){return fn();}}});}catch(e){sb=null;}
+function withTimeout(p,ms){return Promise.race([p,new Promise(function(_,rej){setTimeout(function(){var e=new Error('timeout');e.code='timeout';rej(e);},ms||20000);})]);}
+async function q(p){var r=await withTimeout(p,25000);if(r&&r.error)throw r.error;return r?r.data:null;}
 async function fetchAll(make){var out=[],from=0;for(;;){var d=await q(make().range(from,from+999));d=d||[];out=out.concat(d);if(d.length<1000)break;from+=1000;}return out;}
 function errText(e){
   var m=String((e&&(e.message||e.error_description||e.msg))||e||'');
+  if(e&&e.code==='timeout')return 'সার্ভার সাড়া দিচ্ছে না। ইন্টারনেট দেখে আবার চেষ্টা করুন।';
   if(/Failed to fetch|NetworkError|network|Load failed|fetch/i.test(m))return 'ইন্টারনেট সংযোগ নেই। সংযোগ দেখে আবার চেষ্টা করুন।';
   if(/JWT|expired|refresh token/i.test(m))return 'লগইনের মেয়াদ শেষ। বের হয়ে আবার লগইন করুন।';
   if((e&&e.code==='42501')||/row-level security|not allowed|permission/i.test(m))return 'এই কাজের অনুমতি নেই।';
@@ -65,7 +67,7 @@ function errText(e){
 var FNERR={bad_code:'চালু করার কোড ঠিক নেই।',owner_exists:'মালিকের অ্যাকাউন্ট আগেই খোলা হয়েছে। লগইন করুন।',bad_phone:'মোবাইল নম্বর ঠিক নেই। ১১ সংখ্যার নম্বর দিন, যেমন ০১৭১২৩৪৫৬৭৮।',
   short_password:'পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।',phone_taken:'এই মোবাইল নম্বরে আগেই একটি লগইন আছে।',not_owner:'এই কাজের অনুমতি শুধু মালিকের।',has_login:'এই ড্রাইভারের লগইন আগেই আছে।',no_login:'এই ড্রাইভারের কোনো লগইন নেই।'};
 async function fn(body){
-  var r=await sb.functions.invoke('users',{body:body});
+  var r=await withTimeout(sb.functions.invoke('users',{body:body}),30000);
   if(r.error){
     var info=null;try{info=await r.error.context.json();}catch(e){}
     var err=new Error((info&&(info.message||info.error))||r.error.message||'error');err.code=(info&&info.error)||'';throw err;
@@ -114,11 +116,14 @@ async function loadDriver(){
 async function boot(){
   setupPeriod();
   if(!sb){S.phase='nolib';render();return;}
-  sb.auth.onAuthStateChange(function(ev){
-    if(ev==='SIGNED_OUT'){resetData();S.user=null;S.role=null;S.phase='login';render();checkSetup();}
+  sb.auth.onAuthStateChange(function(ev,session){
+    setTimeout(function(){
+      if(ev==='SIGNED_OUT'&&S.phase!=='login'){location.replace(location.pathname);}
+      else if(ev==='SIGNED_IN'&&S.user&&session&&session.user&&session.user.id!==S.user.id){location.replace(location.pathname);}
+    },0);
   });
   var session=null;
-  try{var r=await sb.auth.getSession();session=r&&r.data&&r.data.session;}catch(e){}
+  try{var r=await withTimeout(sb.auth.getSession(),15000);session=r&&r.data&&r.data.session;}catch(e){}
   if(session){S.user=session.user;await enter();}
   else{S.phase='login';render();checkSetup();}
 }
@@ -136,7 +141,12 @@ async function enter(){
   }catch(e){S.phase='error';S.loadErr=errText(e);}
   render();
 }
-async function logout(){try{await sb.auth.signOut();}catch(e){resetData();S.phase='login';render();}}
+async function logout(){
+  clearInterval(pollT);S.phase='login';
+  try{await withTimeout(sb.auth.signOut({scope:'local'}),8000);}catch(e){}
+  try{localStorage.removeItem('veku-hisab-auth');}catch(e){}
+  location.replace(location.pathname);
+}
 var pollT=null;
 function startPoll(){clearInterval(pollT);pollT=setInterval(function(){if(document.visibilityState==='visible'&&S.role==='owner'&&S.phase==='app')refreshPending();},60000);}
 async function refreshPending(){try{var n=S.pending.length;S.pending=await qPending()||[];if(S.pending.length!==n&&!sheetOpen())render();else renderCab();}catch(e){}}
@@ -247,7 +257,7 @@ function render(){
     top.innerHTML='';
     if(S.phase==='nolib')main.innerHTML=msgHTML('পাতাটি পুরোপুরি খোলেনি','ইন্টারনেট সংযোগ দেখে পাতাটি আবার খুলুন।','<button type="button" class="btn primary" data-act="reload">আবার খুলুন</button>');
     else if(S.phase==='norole')main.innerHTML=msgHTML('আপনার অ্যাকাউন্ট চালু নেই','এই মোবাইল নম্বর দিয়ে কোনো ড্রাইভার বা মালিক যুক্ত নেই। মালিকের সঙ্গে কথা বলুন।','<button type="button" class="btn" data-act="logout">বের হন</button>');
-    else if(S.phase==='error')main.innerHTML=msgHTML('খাতা খোলা যায়নি',S.loadErr,'<button type="button" class="btn primary" data-act="retry">আবার চেষ্টা করুন</button>');
+    else if(S.phase==='error')main.innerHTML=msgHTML('খাতা খোলা যায়নি',S.loadErr,'<button type="button" class="btn primary" data-act="retry">আবার চেষ্টা করুন</button><button type="button" class="btn ghost" data-act="logout">বের হয়ে আবার লগইন করুন</button>');
     else{main.innerHTML=loadingHTML();}
     S.shown='';
   }
@@ -1032,7 +1042,7 @@ $('#loginForm').addEventListener('submit',async function(ev){
   if(!pw){err.textContent='পাসওয়ার্ড দিন।';err.hidden=false;return;}
   var b=$('#lBtn');b.disabled=true;b.textContent='লগইন হচ্ছে…';
   try{
-    var r=await sb.auth.signInWithPassword({email:phoneEmail(ph),password:pw});
+    var r=await withTimeout(sb.auth.signInWithPassword({email:phoneEmail(ph),password:pw}),20000);
     if(r.error){var m=String(r.error.message||'');err.textContent=/invalid|credentials/i.test(m)?'মোবাইল নম্বর বা পাসওয়ার্ড ভুল।':errText(r.error);err.hidden=false;return;}
     S.user=r.data.user;$('#lPass').value='';await enter();
   }catch(e2){err.textContent=errText(e2);err.hidden=false;}
