@@ -10,6 +10,7 @@
 <link rel="icon" href="icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="ভেকু হিসাব">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -80,6 +81,8 @@ button{font:inherit;color:inherit}
 .banner{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 14px;padding:10px 14px;border-radius:10px;background:var(--surface);border:1px solid var(--line);font-size:14px}
 .banner.wait{background:var(--amber-soft);border-color:var(--amber)}
 .banner.bad{background:var(--bad-soft);border-color:var(--bad)}
+#installBar .banner{background:var(--blue-soft);border-color:var(--blue)}
+#installBar .banner p{flex:1 1 220px}
 
 .hero{padding:2px 2px 0}
 .big{font-family:var(--f-num);font-size:clamp(34px,9vw,46px);font-weight:700;line-height:1.15;margin:4px 0 4px;font-variant-numeric:tabular-nums}
@@ -297,6 +300,7 @@ dialog.sheetdlg::backdrop{background:rgba(8,10,13,.5)}
 </header>
 
 <div class="wrap">
+  <div id="installBar" hidden></div>
   <div id="banner"></div>
 
   <section class="authbox" id="auth" hidden>

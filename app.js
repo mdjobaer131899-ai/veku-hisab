@@ -793,7 +793,7 @@ function ownersHTML(){
   h+='<div class="actions"><button type="button" class="btn primary" data-act="save-owners" id="ownSave"'+(S.ownersDirty?'':' disabled')+'>সংরক্ষণ করুন</button><button type="button" class="btn ghost" data-act="reset-owners" id="ownReset"'+(S.ownersDirty?'':' disabled')+'>বাতিল</button></div>';
   var ph=S.user&&S.user.email?S.user.email.split('@')[0]:'';
   h+='<section class="panel"><div class="panel-head"><h2>আপনার অ্যাকাউন্ট</h2><p class="hint">লগইনের মোবাইল নম্বর: '+esc(bnPhone(ph))+'</p></div>'+
-    '<div class="field"><span>সংখ্যা কীভাবে দেখাবে <em>শুধু এই ফোনে</em></span>'+digitsHTML()+'</div>'+'<div class="actions"><button type="button" class="btn" data-act="my-password">পাসওয়ার্ড বদলান</button><button type="button" class="btn ghost" data-act="logout">বের হন</button></div></section>';
+    '<div class="field"><span>সংখ্যা কীভাবে দেখাবে <em>শুধু এই ফোনে</em></span>'+digitsHTML()+'</div>'+(isStandalone()?'':'<p class="hint">ফোনে অ্যাপ হিসেবে রাখতে Chrome-এর মেনু (⋮) থেকে "Install app" বা "Add to Home screen" চাপুন।</p>')+'<div class="actions"><button type="button" class="btn" data-act="my-password">পাসওয়ার্ড বদলান</button><button type="button" class="btn ghost" data-act="logout">বের হন</button></div></section>';
   return h;
 }
 function osumHTML(){
@@ -1523,6 +1523,28 @@ $('#dDel').addEventListener('click',async function(){
   }catch(e){dErr(errText(e));}
   finally{b.disabled=false;}
 });
+
+/* ---------- install as an app ---------- */
+var installEvt=null;
+function isStandalone(){try{return window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}}
+function installDismissed(){try{return localStorage.getItem('veku-install-hide')==='1';}catch(e){return false;}}
+function renderInstall(){
+  var bar=$('#installBar');if(!bar)return;
+  if(isStandalone()||installDismissed()){bar.hidden=true;return;}
+  var ios=/iphone|ipad|ipod/i.test(navigator.userAgent);
+  if(installEvt){bar.innerHTML='<div class="banner"><p><b>ফোনে অ্যাপ হিসেবে রাখুন।</b> হোম স্ক্রিনে আইকন থাকবে, পুরো স্ক্রিনে খুলবে।</p><div class="actions"><button type="button" class="btn primary small" data-act="install">ইনস্টল করুন</button><button type="button" class="btn ghost small" data-act="install-hide">পরে</button></div></div>';bar.hidden=false;}
+  else if(ios){bar.innerHTML='<div class="banner"><p><b>iPhone-এ অ্যাপ হিসেবে রাখতে:</b> Safari-র নিচের শেয়ার বোতাম চেপে "Add to Home Screen" বাছুন।</p><div class="actions"><button type="button" class="btn ghost small" data-act="install-hide">ঠিক আছে</button></div></div>';bar.hidden=false;}
+  else bar.hidden=true;
+}
+window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();installEvt=e;renderInstall();});
+window.addEventListener('appinstalled',function(){installEvt=null;renderInstall();toast('অ্যাপ ইনস্টল হয়েছে, হোম স্ক্রিনে আইকন দেখুন');});
+document.addEventListener('click',function(e){
+  var b=e.target.closest&&e.target.closest('[data-act="install"],[data-act="install-hide"]');if(!b)return;
+  if(b.dataset.act==='install-hide'){try{localStorage.setItem('veku-install-hide','1');}catch(err){}renderInstall();return;}
+  if(installEvt){installEvt.prompt();installEvt.userChoice.then(function(){installEvt=null;renderInstall();},function(){});}
+});
+if('serviceWorker' in navigator&&location.protocol==='https:'){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){});});}
+renderInstall();
 
 boot();
 })();

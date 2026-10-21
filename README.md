@@ -45,3 +45,9 @@ where email = '01XXXXXXXXX@phone.veku-hisab.app';
 - `config.js`: Supabase প্রজেক্টের ঠিকানা আর পাবলিক key (এটা প্রকাশ করা নিরাপদ, ডাটাবেসের নিয়মই সুরক্ষা দেয়)
 - `supabase/schema.sql`: ডাটাবেসের টেবিল আর নিরাপত্তার নিয়ম
 - `supabase/functions/users/`: লগইন তৈরি আর পাসওয়ার্ড বদলানোর ফাংশন
+
+## ফোনে অ্যাপ হিসেবে
+
+- **Android (Chrome):** সাইট খুললে ওপরে "ইনস্টল করুন" বোতাম আসে। না এলে Chrome-এর মেনু (⋮) থেকে "Install app" বা "Add to Home screen"।
+- **iPhone (Safari):** শেয়ার বোতাম → "Add to Home Screen"।
+- **APK ফাইল:** https://www.pwabuilder.com -এ `https://veku-hisab.vercel.app` দিয়ে Android প্যাকেজ বানানো যায়। প্যাকেজের `assetlinks.json` ফাইলটা এই repo-তে `.well-known/assetlinks.json` নামে রাখলে অ্যাপ ঠিকানার বার ছাড়া পুরো স্ক্রিনে খুলবে।
