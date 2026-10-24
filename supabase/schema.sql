@@ -478,3 +478,26 @@ end $$;
 revoke execute on function public.site_totals(), public.cash_part(date, date), public.cash_book(date, date) from public, anon;
 revoke execute on function public.cash_part(date, date) from authenticated;
 grant execute on function public.site_totals(), public.cash_book(date, date) to authenticated;
+
+-- ===== hours and wage per driver, grouped by the per-hour rate each day was paid at (added later) =====
+create or replace function public.driver_work() returns table(driver_id uuid, per_hour numeric, hours numeric, amount numeric, n integer)
+language plpgsql stable security definer set search_path = '' as $$
+#variable_conflict use_column
+declare me uuid;
+begin
+  if public.is_owner() then
+    me := null;
+  else
+    me := public.my_driver_id();
+    if me is null then raise exception 'not allowed' using errcode = '42501'; end if;
+  end if;
+  return query
+    select e.driver_id,
+      case when e.hours > 0 then round(e.driver_wage / e.hours, 2) end,
+      coalesce(sum(e.hours), 0), coalesce(sum(e.driver_wage), 0), count(*)::int
+    from public.entries e
+    where e.driver_id is not null and (me is null or e.driver_id = me)
+    group by 1, 2;
+end $$;
+revoke execute on function public.driver_work() from public, anon;
+grant execute on function public.driver_work() to authenticated;

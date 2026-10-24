@@ -104,10 +104,15 @@ function qPending(){return q(sb.from('submissions').select('*').eq('status','pen
 function qDrivers(){return q(sb.from('drivers').select('*').order('created_at'));}
 function qSettings(){return q(sb.from('settings').select('*').eq('id',1).maybeSingle());}
 function qSites(){return q(sb.from('sites').select('*').order('created_at'));}
+function qWork(){return q(sb.rpc('driver_work')).catch(function(){return null;});}
+function setDwork(rows){
+  if(!rows){S.dwork=null;return;}
+  var m={};rows.forEach(function(r){(m[r.driver_id]=m[r.driver_id]||[]).push({ph:r.per_hour==null?null:+r.per_hour,hours:+r.hours||0,amount:+r.amount||0,n:+r.n||0});});S.dwork=m;
+}
 function setSsum(rows){var m={};(rows||[]).forEach(function(r){m[r.site_id]=r;});S.ssum=m;}
 async function loadOwner(){
-  var r=await Promise.all([qSettings(),qDrivers(),qEntries(),qRepairs(),qPending(),q(sb.rpc('driver_balances')),q(sb.rpc('shop_balances')),qSites(),q(sb.rpc('site_totals')),qSitePays(),qOwnerTx()]);
-  S.settings=normSettings(r[0]);S.drivers=r[1]||[];S.entries=r[2];S.repairs=r[3];S.pending=r[4]||[];setDbal(r[5]);S.sbal=r[6]||[];S.sites=r[7]||[];setSsum(r[8]);S.sitePays=r[9]||[];S.ownerTx=r[10]||[];
+  var r=await Promise.all([qSettings(),qDrivers(),qEntries(),qRepairs(),qPending(),q(sb.rpc('driver_balances')),q(sb.rpc('shop_balances')),qSites(),q(sb.rpc('site_totals')),qSitePays(),qOwnerTx(),qWork()]);
+  S.settings=normSettings(r[0]);S.drivers=r[1]||[];S.entries=r[2];S.repairs=r[3];S.pending=r[4]||[];setDbal(r[5]);S.sbal=r[6]||[];S.sites=r[7]||[];setSsum(r[8]);S.sitePays=r[9]||[];S.ownerTx=r[10]||[];setDwork(r[11]);
   if(S.settings.owners.some(function(o){return !o.id;})){var st=clone(S.settings);st.owners.forEach(function(o){if(!o.id)o.id=uid();});saveSettings(st).catch(function(){});}
 }
 function qSitePays(){return fetchAll(function(){return sb.from('site_payments').select('*').order('date').order('created_at');});}
@@ -115,13 +120,13 @@ function qOwnerTx(){return fetchAll(function(){return sb.from('owner_tx').select
 async function reloadSitePays(){S.sitePays=await qSitePays();S.cash=null;}
 async function reloadOwnerTx(){S.ownerTx=await qOwnerTx();S.cash=null;}
 async function reloadYear(){var r=await Promise.all([qEntries(),qRepairs()]);S.entries=r[0];S.repairs=r[1];S.cash=null;}
-async function reloadBal(){var r=await Promise.all([q(sb.rpc('driver_balances')),q(sb.rpc('shop_balances')),q(sb.rpc('site_totals'))]);setDbal(r[0]);S.sbal=r[1]||[];setSsum(r[2]);S.stmt={};S.shopStmt={};S.siteStmt={};S.cash=null;}
+async function reloadBal(){var r=await Promise.all([q(sb.rpc('driver_balances')),q(sb.rpc('shop_balances')),q(sb.rpc('site_totals')),qWork()]);setDbal(r[0]);S.sbal=r[1]||[];setSsum(r[2]);setDwork(r[3]);S.stmt={};S.shopStmt={};S.siteStmt={};S.cash=null;}
 async function reloadSites(){S.sites=await qSites()||[];}
 async function reloadDrivers(){S.drivers=await qDrivers()||[];}
 async function reloadSettings(){S.settings=normSettings(await qSettings());}
 async function loadDriver(){
-  var r=await Promise.all([q(sb.rpc('my_account')),q(sb.rpc('pub_info')),q(sb.from('submissions').select('*').order('created_at',{ascending:false}).limit(40))]);
-  S.acct=r[0];S.pub={vekus:normVekus(r[1]&&r[1].vekus),shops:normShops(r[1]&&r[1].shops),diesel_rate:+(r[1]&&r[1].diesel_rate)||0,sites:(r[1]&&Array.isArray(r[1].sites))?r[1].sites:[]};S.mine=r[2]||[];
+  var r=await Promise.all([q(sb.rpc('my_account')),q(sb.rpc('pub_info')),q(sb.from('submissions').select('*').order('created_at',{ascending:false}).limit(40)),qWork()]);
+  S.acct=r[0];setDwork(r[3]);S.pub={vekus:normVekus(r[1]&&r[1].vekus),shops:normShops(r[1]&&r[1].shops),diesel_rate:+(r[1]&&r[1].diesel_rate)||0,sites:(r[1]&&Array.isArray(r[1].sites))?r[1].sites:[]};S.mine=r[2]||[];
 }
 
 /* ---------- boot & auth ---------- */
@@ -525,6 +530,31 @@ function shopStmtRows(list){
 async function loadDriverStmt(id){try{S.stmt[id]=await q(sb.rpc('driver_statement',{p_driver:id}))||[];}catch(e){S.stmt[id]=[];toast(errText(e));}render();}
 async function loadShopStmt(name){try{S.shopStmt[name]=await q(sb.rpc('shop_statement',{p_shop:name}))||[];}catch(e){S.shopStmt[name]=[];toast(errText(e));}render();}
 
+/* ----- driver pay summary: hours → wage → taken → left ----- */
+function rateTk(n){return '৳'+NF2.format(+n||0);}
+function workCalc(groups,d){
+  if(!groups||!d||d.rate_type!=='hour')return '';
+  var hr=groups.filter(function(g){return g.ph>0&&g.hours>0;}).sort(function(a,b){return b.hours-a.hours;}),L=[];
+  if(hr.length===1)L.push(q1(hr[0].hours)+' ঘণ্টা × '+rateTk(hr[0].ph));
+  else hr.forEach(function(g){L.push(q1(g.hours)+' ঘণ্টা × '+rateTk(g.ph)+' = '+tk(g.amount));});
+  groups.forEach(function(g){
+    if(g.ph===0&&g.hours>0)L.push(q1(g.hours)+' ঘণ্টার মজুরি ধরা হয়নি');
+    else if(g.ph==null&&g.amount)L.push('ঘণ্টা ছাড়া '+tk(g.amount));
+  });
+  return L.map(function(l){return '<small>'+l+'</small>';}).join('');
+}
+function payReceipt(o){
+  var bal=o.earned-o.paid,you=o.you;
+  var last=bal<0?(you?'বেশি নিয়েছেন':'বেশি নিয়েছে'):bal>0?(you?'বাকি পাবেন':'বাকি পাবে'):'সব শোধ হয়েছে';
+  return '<div class="rcpt'+(o.sm?' sm':'')+'">'+
+    '<div><span class="rl">মোট কাজ</span><b>'+q1(o.hours)+' ঘণ্টা</b></div>'+
+    '<div><span class="rl">মোট মজুরি'+workCalc(o.groups,o.d)+'</span><b>'+tk(o.earned)+'</b></div>'+
+    '<div><span class="rl">'+(you?'নিয়েছেন':'নিয়েছে')+'</span><b>'+tk(o.paid)+'</b></div>'+
+    '<div class="rtot"><span class="rl">'+last+'</span><b class="'+(bal<0?'neg':bal>0?'pos':'')+'">'+tk(Math.abs(bal))+'</b></div>'+
+  '</div>';
+}
+function workHours(groups,fallback){return groups?sum(groups,function(g){return g.hours;}):(+fallback||0);}
+
 /* ----- owner: drivers ----- */
 function driversHTML(){
   var h='<div class="panel-head"><p class="eyebrow">মজুরি, অগ্রিম আর বাকি</p><h2>ড্রাইভারদের হিসাব</h2><p class="hint">মজুরি জমা হয় দৈনিক হিসাব থেকে। ড্রাইভারকে টাকা দিলে এখানে লিখুন, বাকি নিজে হিসাব হবে।</p></div>';
@@ -536,7 +566,7 @@ function driversHTML(){
       var b=dBal(d.id),open=S.openDriver===d.id;
       return '<article class="pcard'+(open?' wide':'')+'"><div class="phead"><b>'+esc(d.name)+'</b><span class="st '+(d.user_id?'on':'plain')+'">'+(d.user_id?'লগইন আছে':'লগইন নেই')+'</span>'+(d.phone?'<span class="muted">'+esc(bnPhone(d.phone))+'</span>':'')+'</div>'+
         '<p class="hint">'+wageText(d)+'</p>'+
-        '<div class="kv3"><div><span>মজুরি হয়েছে</span><b>'+tk(b.earned)+'</b></div><div><span>নিয়েছে</span><b>'+tk(b.paid)+'</b></div><div><span>'+(b.bal<0?'বেশি নিয়েছে':'বাকি পাবে')+'</span><b class="'+(b.bal<0?'neg':b.bal>0?'pos':'')+'">'+tk(Math.abs(b.bal))+'</b></div></div>'+
+        (function(){var g=S.dwork?(S.dwork[d.id]||[]):null;return payReceipt({hours:workHours(g,sum(S.entries.filter(function(e){return e.driver_id===d.id;}),function(e){return +e.hours||0;})),groups:g,d:d,earned:b.earned,paid:b.paid,sm:true});})()+
         '<div class="actions"><button type="button" class="btn primary small" data-dpaynew="'+esc(d.id)+'">টাকা দিলেন লিখুন</button><button type="button" class="btn small" data-dopen="'+esc(d.id)+'">'+(open?'হিসাব লুকান':'হিসাব দেখুন')+'</button><button type="button" class="btn ghost small" data-dedit="'+esc(d.id)+'">বদলান / লগইন</button></div>'+
         (open?stmtTable(driverStmtRows(S.stmt[d.id]),['মজুরি (৳)','নিয়েছেন (৳)'],'data-dpay')+(S.stmt[d.id]&&S.stmt[d.id].length?'<p class="hint">"নিয়েছেন" সারিতে চাপ দিলে বদলানো বা মুছে ফেলা যাবে।</p>':''):'')+
       '</article>';
@@ -818,8 +848,9 @@ var STL={pending:'অপেক্ষায়',approved:'অনুমোদি�
 function driverTopHTML(){
   var a=S.acct;if(!a)return '';
   var d=a.driver||{},earned=+a.earned||0,paid=+a.paid||0,bal=earned-paid,open=S.openMine;
-  return '<section class="panel"><div class="panel-head"><p class="dname">'+esc(d.name||'')+'</p><p class="eyebrow">আপনার টাকার হিসাব · '+wageText(d)+'</p><h2 class="dbal">'+(bal<0?'বেশি নিয়েছেন ':'বাকি পাবেন ')+'<span class="'+(bal<0?'neg':'pos')+'">'+tk(Math.abs(bal))+'</span></h2><p class="hint">আজ পর্যন্ত সব মিলিয়ে।</p></div>'+
-    '<div class="kv3"><div><span>মজুরি হয়েছে</span><b>'+tk(earned)+'</b></div><div><span>নিয়েছেন</span><b>'+tk(paid)+'</b></div><div><span>মোট কাজ</span><b>'+q1(a.hours)+' ঘণ্টা</b></div></div>'+
+  var g=S.dwork?(S.dwork[d.id]||[]):null;
+  return '<section class="panel"><div class="panel-head"><p class="dname">'+esc(d.name||'')+'</p><p class="eyebrow">আপনার টাকার হিসাব · আজ পর্যন্ত সব মিলিয়ে</p></div>'+
+    payReceipt({hours:workHours(g,a.hours),groups:g,d:d,earned:earned,paid:paid,you:true})+
     '<button type="button" class="linkbtn" data-act="my-stmt">'+(open?'লেনদেন লুকান':'সব লেনদেন দেখুন')+'</button>'+
     (open?stmtTable(driverStmtRows(a.statement||[]),['মজুরি (৳)','নিয়েছেন (৳)'],null):'')+
     '<div class="field"><span>সংখ্যা কীভাবে দেখাবে</span>'+digitsHTML()+'</div>'+

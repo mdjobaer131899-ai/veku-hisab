@@ -106,6 +106,20 @@ button{font:inherit;color:inherit}
 .kv3 span{font-size:12.5px;color:var(--muted)}
 .kv3 b{font:600 clamp(15px,4.4vw,19px)/1.3 var(--f-num);font-variant-numeric:tabular-nums;white-space:nowrap}
 .pos{color:var(--good)} .neg{color:var(--bad)}
+.rcpt{display:grid;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);overflow:hidden}
+.rcpt>div{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-top:1px solid var(--line)}
+.rcpt>div:first-child{border-top:0}
+.rcpt .rl{display:grid;gap:1px;font-size:15.5px;font-weight:500;color:var(--ink);min-width:0}
+.rcpt .rl small{font:500 13px/1.35 var(--f-num);color:var(--muted)}
+.rcpt b{font:700 clamp(20px,5.6vw,24px)/1.2 var(--f-num);font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
+.rcpt .rtot{background:var(--surface);border-top:2px solid var(--line-strong)}
+.rcpt .rtot .rl{font-weight:700;font-size:17px}
+.rcpt .rtot b{font-size:clamp(28px,8vw,36px)}
+.rcpt.sm>div{padding:9px 12px}
+.rcpt.sm .rl{font-size:14px}
+.rcpt.sm b{font-size:clamp(17px,4.8vw,20px)}
+.rcpt.sm .rtot .rl{font-size:15px}
+.rcpt.sm .rtot b{font-size:clamp(22px,6.2vw,26px)}
 .barbox{display:grid;gap:8px}
 .bar{position:relative;display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--surface-2);border:1px solid var(--line)}
 .seg{height:100%}
