@@ -932,8 +932,10 @@ function autoFuel(){var r=S.settings.diesel_rate;if(r&&!F.fuelTouched){var l=num
 function autoWage(){
   var id=$('#fDrvSel').value,d=driverBy(id);
   $('#wageHint').textContent=d?wageText(d):'';
+  if(F.wagePH!=null&&d&&d.rate_type==='hour'&&Math.round(F.wagePH)!==Math.round(+d.rate))$('#wageHint').textContent='এই দিনের হার ঘণ্টায় '+tk(Math.round(F.wagePH))+' (এখনকার হার '+tk(d.rate)+')';
   if(F.wageTouched)return;
-  var w=wageFor(id,num($('#fHours').value));
+  var h=num($('#fHours').value);
+  var w=F.wagePH!=null?Math.round(h*F.wagePH):wageFor(id,h);
   if(w!=null)$('#fDriver').value=shown(w);
 }
 function fuelHint(){var r=S.settings.diesel_rate;$('#fuelHint').textContent=r?('মেমোর টাকা না থাকলে লিটার × ৳'+NF2.format(r)+' ধরা হবে'):'মেমোর টাকা লিখুন';}
@@ -976,7 +978,9 @@ function openSheet(type,rec,ap,opts){
   fillDrvSel(ap?ap.driver_id:rec?(rec.driver_id||''):lastDriverFor(F.veku));
   $('#fDriver').value=rec&&isE?shown(rec.driver_wage):'';
   F.fuelTouched=!!rec||!!(ap&&+ap.fuel_cost>0);
-  F.wageTouched=!!rec;
+  var rd=rec&&isE&&rec.driver_id?driverBy(rec.driver_id):null;
+  F.wagePH=rd&&rd.rate_type==='hour'&&+rec.hours>0&&+rec.driver_wage>0?(+rec.driver_wage)/(+rec.hours):null;
+  F.wageTouched=!!rec&&F.wagePH==null;
   $('#fDesc').value=rec&&!isE?(rec.description||''):'';
   $('#fAmount').value=rec&&!isE?shown(rec.amount):'';
   setKind(rec&&!isE?(rec.kind||'অন্যান্য'):'মেরামত');
@@ -1477,7 +1481,7 @@ $('#fSiteSel').addEventListener('change',function(){F.siteTouched=true;var isNew
 $('#fLitres').addEventListener('input',autoFuel);
 $('#fFuel').addEventListener('input',function(){F.fuelTouched=$('#fFuel').value.trim()!=='';});
 $('#fHours').addEventListener('input',autoWage);
-$('#fDrvSel').addEventListener('change',function(){F.wageTouched=false;autoWage();});
+$('#fDrvSel').addEventListener('change',function(){F.wageTouched=false;F.wagePH=null;autoWage();});
 $('#fDriver').addEventListener('input',function(){F.wageTouched=$('#fDriver').value.trim()!=='';});
 $('#sheetForm').addEventListener('submit',submitSheet);
 $('#sheetClose').addEventListener('click',closeSheet);
