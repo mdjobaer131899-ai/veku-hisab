@@ -501,3 +501,123 @@ begin
 end $$;
 revoke execute on function public.driver_work() from public, anon;
 grant execute on function public.driver_work() to authenticated;
+-- ===== a site can pay the excavators' bills directly (expenses, driver pay, diesel shop); counts as money received from that site (added later) =====
+alter table public.repairs add column if not exists paid_site_id uuid references public.sites(id);
+alter table public.driver_payments add column if not exists paid_site_id uuid references public.sites(id);
+alter table public.shop_payments add column if not exists paid_site_id uuid references public.sites(id);
+create index if not exists repairs_paid_site_idx on public.repairs(paid_site_id) where paid_site_id is not null;
+create index if not exists driver_payments_paid_site_idx on public.driver_payments(paid_site_id) where paid_site_id is not null;
+create index if not exists shop_payments_paid_site_idx on public.shop_payments(paid_site_id) where paid_site_id is not null;
+
+-- site "paid" now also counts what the site paid on the excavators' behalf
+create or replace function public.site_totals() returns table(site_id uuid, hours_v1 numeric, hours_v2 numeric, deposit numeric, paid numeric, billed numeric, days bigint, first_date date, last_date date, n bigint)
+language plpgsql stable security definer set search_path = '' as $$
+#variable_conflict use_column
+begin
+  if not public.is_owner() then raise exception 'not allowed' using errcode = '42501'; end if;
+  return query
+    select s.id,
+      coalesce(e.h1, 0), coalesce(e.h2, 0), coalesce(e.dep, 0), coalesce(p.amt, 0), coalesce(e.billed, 0),
+      coalesce(e.days, 0), e.first_date, e.last_date, coalesce(e.n, 0) + coalesce(p.n, 0)
+    from public.sites s
+    left join (
+      select x.site_id,
+        sum(x.hours) filter (where x.veku = 'v1') as h1,
+        sum(x.hours) filter (where x.veku = 'v2') as h2,
+        sum(x.deposit) as dep,
+        sum(x.hours * case when x.rate > 0 then x.rate else ss.rate end) as billed,
+        count(distinct x.date) filter (where x.hours > 0) as days,
+        min(x.date) as first_date, max(x.date) as last_date, count(*) as n
+      from public.entries x join public.sites ss on ss.id = x.site_id group by x.site_id
+    ) e on e.site_id = s.id
+    left join (
+      select z.sid as site_id, sum(z.amount) as amt, count(*) as n from (
+        select y.site_id as sid, y.amount from public.site_payments y
+        union all select r.paid_site_id, r.amount from public.repairs r where r.paid_site_id is not null
+        union all select d.paid_site_id, d.amount from public.driver_payments d where d.paid_site_id is not null
+        union all select h.paid_site_id, h.amount from public.shop_payments h where h.paid_site_id is not null
+      ) z group by z.sid
+    ) p on p.site_id = s.id;
+end $$;
+
+-- money a site paid directly never reached the cash box: leave it out of cash out, report it separately
+create or replace function public.cash_part(p_from date, p_to date) returns jsonb
+language sql stable security definer set search_path = '' as $$
+  select jsonb_build_object(
+    'site_in', coalesce((select sum(deposit) from public.entries where (p_from is null or date >= p_from) and (p_to is null or date <= p_to)), 0)
+             + coalesce((select sum(amount) from public.site_payments where (p_from is null or date >= p_from) and (p_to is null or date <= p_to)), 0),
+    'owner_give', coalesce((select sum(amount) from public.owner_tx where kind = 'give' and (p_from is null or date >= p_from) and (p_to is null or date <= p_to)), 0),
+    'diesel_cash', coalesce((select sum(fuel_cost) from public.entries where fuel_pay = 'cash' and (p_from is null or date >= p_from) and (p_to is null or date <= p_to)), 0),
+    'shop_paid', coalesce((select sum(amount) from public.shop_payments where paid_site_id is null and (p_from is null or date >= p_from) and (p_to is null or date <= p_to)), 0),
+    'driver_paid', coalesce((select sum(amount) from public.driver_payments where paid_site_id is null and (p_from is null or date >= p_from) and (p_to is null or date <= p_to)), 0),
+    'repairs', coalesce((select sum(amount) from public.repairs where paid_site_id is null and (p_from is null or date >= p_from) and (p_to is null or date <= p_to)), 0),
+    'owner_take', coalesce((select sum(amount) from public.owner_tx where kind = 'take' and (p_from is null or date >= p_from) and (p_to is null or date <= p_to)), 0),
+    'site_direct', coalesce((select sum(amount) from public.shop_payments where paid_site_id is not null and (p_from is null or date >= p_from) and (p_to is null or date <= p_to)), 0)
+             + coalesce((select sum(amount) from public.driver_payments where paid_site_id is not null and (p_from is null or date >= p_from) and (p_to is null or date <= p_to)), 0)
+             + coalesce((select sum(amount) from public.repairs where paid_site_id is not null and (p_from is null or date >= p_from) and (p_to is null or date <= p_to)), 0)
+  );
+$$;
+
+-- statements now say which site each day's work was at, and which site paid
+create or replace function public.driver_statement(p_driver uuid) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare v jsonb;
+begin
+  if not public.is_owner() and (public.my_driver_id() is null or public.my_driver_id() <> p_driver) then
+    raise exception 'not allowed' using errcode = '42501';
+  end if;
+  select coalesce(jsonb_agg(to_jsonb(x) order by x.date desc, x.created_at desc), '[]'::jsonb) into v from (
+    select * from (
+      select 'earn'::text as kind, e.id, e.date, e.veku, e.hours, e.driver_wage as amount, ''::text as note, e.created_at,
+          coalesce(ws.name, e.site, '') as site, ''::text as payer
+        from public.entries e left join public.sites ws on ws.id = e.site_id
+        where e.driver_id = p_driver and e.driver_wage <> 0
+      union all
+      select 'paid'::text, p.id, p.date, null::text, null::numeric, p.amount, p.note, p.created_at,
+          ''::text, coalesce(ps.name, '')
+        from public.driver_payments p left join public.sites ps on ps.id = p.paid_site_id
+        where p.driver_id = p_driver
+    ) u order by u.date desc, u.created_at desc limit 300
+  ) x;
+  return v;
+end $$;
+
+create or replace function public.shop_statement(p_shop text) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare v jsonb;
+begin
+  if not public.is_owner() then raise exception 'not allowed' using errcode = '42501'; end if;
+  select coalesce(jsonb_agg(to_jsonb(x) order by x.date desc, x.created_at desc), '[]'::jsonb) into v from (
+    select * from (
+      select 'due'::text as kind, e.id, e.date, e.veku, e.litres, e.fuel_cost as amount, ''::text as note, e.created_at, ''::text as payer
+        from public.entries e where e.fuel_pay = 'due' and e.fuel_src = p_shop
+      union all
+      select 'paid'::text, p.id, p.date, null::text, null::numeric, p.amount, p.note, p.created_at, coalesce(ps.name, '')
+        from public.shop_payments p left join public.sites ps on ps.id = p.paid_site_id
+        where p.shop = p_shop
+    ) u order by u.date desc, u.created_at desc limit 300
+  ) x;
+  return v;
+end $$;
+
+-- per site: each driver's hours and wage there, and what the site paid on the excavators' behalf
+create or replace function public.site_breakdown() returns table(kind text, site_id uuid, ref text, hours numeric, amount numeric)
+language plpgsql stable security definer set search_path = '' as $$
+#variable_conflict use_column
+begin
+  if not public.is_owner() then raise exception 'not allowed' using errcode = '42501'; end if;
+  return query
+    select 'work'::text, e.site_id, e.driver_id::text, coalesce(sum(e.hours), 0), coalesce(sum(e.driver_wage), 0)
+      from public.entries e where e.site_id is not null and e.driver_id is not null group by e.site_id, e.driver_id
+    union all
+    select 'driver'::text, p.paid_site_id, p.driver_id::text, null::numeric, sum(p.amount)
+      from public.driver_payments p where p.paid_site_id is not null group by p.paid_site_id, p.driver_id
+    union all
+    select 'repair'::text, r.paid_site_id, r.veku, null::numeric, sum(r.amount)
+      from public.repairs r where r.paid_site_id is not null group by r.paid_site_id, r.veku
+    union all
+    select 'shop'::text, h.paid_site_id, h.shop, null::numeric, sum(h.amount)
+      from public.shop_payments h where h.paid_site_id is not null group by h.paid_site_id, h.shop;
+end $$;
+revoke execute on function public.site_breakdown() from public, anon;
+grant execute on function public.site_breakdown() to authenticated;
