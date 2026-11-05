@@ -235,6 +235,17 @@ table.khata.stmt{min-width:0}
 .sl{display:inline-block;min-width:1.7em;color:var(--muted);font-size:12px;font-family:var(--f-num)}
 .dsub{display:block;font-size:12px;color:var(--muted);padding-left:1.7em;white-space:nowrap}
 .by{display:block;font-size:12px}
+.chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:1px}
+.chips::-webkit-scrollbar{display:none}
+.chips button{flex:0 0 auto;display:grid;gap:1px;text-align:left;padding:8px 14px;border-radius:10px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);font:650 15px/1.3 var(--f-body);cursor:pointer;min-height:48px}
+.chips button small{font:500 12.5px/1.2 var(--f-num);color:var(--muted)}
+.chips button[aria-selected="true"]{background:var(--amber-soft);border-color:var(--amber);box-shadow:inset 0 0 0 1px var(--amber)}
+table.khata.fit{min-width:0;font-size:14px}
+.khata.fit th,.khata.fit td{padding:8px 7px}
+.khata.fit th{font-size:12.5px;white-space:nowrap}
+.khata.fit .c1{min-width:0;white-space:nowrap}
+.dnote{display:block;font-size:12px;color:var(--muted);white-space:normal;max-width:11em;line-height:1.35}
+.nsub{display:block;font-size:11.5px;color:var(--muted);font-weight:400}
 .chip{display:inline-block;font-size:12px;padding:0 8px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);color:var(--muted);white-space:nowrap;margin-right:6px}
 .below{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
 

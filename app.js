@@ -84,7 +84,7 @@ async function fn(body){
 function fnErrText(e){return FNERR[e&&e.code]||errText(e);}
 
 /* ---------- state ---------- */
-var S={phase:'boot',role:null,user:null,needSetup:false,tab:'home',sub:{book:'daily',acc:'sites',own:'sum'},brk:null,siteExtra:{},veku:'v1',year:now.getFullYear(),month:now.getMonth()+1,
+var S={phase:'boot',role:null,user:null,needSetup:false,tab:'home',bookSite:{},repAll:false,sub:{book:'daily',acc:'sites',own:'sum'},brk:null,siteExtra:{},veku:'v1',year:now.getFullYear(),month:now.getMonth()+1,
   settings:normSettings(null),drivers:[],entries:[],repairs:[],pending:[],dbal:{},sbal:[],sites:[],ssum:{},sitePays:[],ownerTx:[],cash:null,season:null,seasonFrom:'',seasonTo:'',
   openDriver:null,openShop:null,openSite:null,stmt:{},shopStmt:{},siteStmt:{},
   acct:null,pub:{vekus:normVekus(),shops:[],sites:[]},mine:[],openMine:false,apDep:{},
@@ -98,8 +98,8 @@ function resetData(){
 /* ---------- loading ---------- */
 function yRange(){return [S.year+'-01-01',S.year+'-12-31'];}
 function setDbal(rows){var m={};(rows||[]).forEach(function(r){m[r.driver_id]={earned:+r.earned||0,paid:+r.paid||0};});S.dbal=m;}
-function qEntries(){var yr=yRange();return fetchAll(function(){return sb.from('entries').select('*').gte('date',yr[0]).lte('date',yr[1]).order('date').order('created_at');});}
-function qRepairs(){var yr=yRange();return fetchAll(function(){return sb.from('repairs').select('*').gte('date',yr[0]).lte('date',yr[1]).order('date').order('created_at');});}
+function qEntries(){return fetchAll(function(){return sb.from('entries').select('*').order('date').order('created_at');});}
+function qRepairs(){return fetchAll(function(){return sb.from('repairs').select('*').order('date').order('created_at');});}
 function qPending(){return q(sb.from('submissions').select('*').eq('status','pending').order('date').order('created_at'));}
 function qDrivers(){return q(sb.from('drivers').select('*').order('created_at'));}
 function qSettings(){return q(sb.from('settings').select('*').eq('id',1).maybeSingle());}
@@ -273,7 +273,7 @@ function isOwnerApp(){return S.phase==='app'&&S.role==='owner';}
 var GROUPS={home:['home'],book:['daily','repair'],acc:['sites','drivers','diesel'],own:['sum','cash','owners']};
 function groupOf(t){for(var g in GROUPS){if(GROUPS[g].indexOf(t)>=0)return g;}return 'home';}
 function goTab(t){if(t==='approve'||!t)t='home';if(GROUPS[groupOf(t)].indexOf(t)<0)t='home';S.tab=t;var g=groupOf(t);if(g!=='home')S.sub[g]=t;if(t==='home')refreshPending();}
-var PERIOD_TABS=['daily','repair','sites','sum','cash'];
+var PERIOD_TABS=['sites','sum','cash'];
 function renderCab(){
   var oc=isOwnerApp();
   $('#period').hidden=!oc||PERIOD_TABS.indexOf(S.tab)<0;$('#tabs').hidden=!oc;$('#cabInner').classList.toggle('solo',!oc);
@@ -550,45 +550,74 @@ function vswitchHTML(){
     return '<button type="button" role="tab" class="'+v+'" data-veku="'+v+'" aria-selected="'+(S.veku===v)+'">'+plate(v)+'<span>'+esc(vName(v))+'</span></button>';
   }).join('')+'</div>';
 }
-function ledgerHead(title,rows,daily){
-  var sites={};rows.forEach(function(r){var n=siteName(r);if(n)sites[n]=1;});
-  var sl=Object.keys(sites);
-  return '<div class="ledger-head"><div><p class="eyebrow">'+title+'</p><h2>'+esc(vName(S.veku))+' · '+periodLabel()+'</h2></div>'+
-    '<dl class="meta">'+(daily?'<div><dt>সাইটের নাম</dt><dd>'+(sl.length?sl.map(esc).join(', '):'—')+'</dd></div>':'')+'<div><dt>বছর</dt><dd>'+DIG(S.year)+'</dd></div></dl></div>';
-}
-function dateCell(r,i,sub){
-  return '<td class="c1"><span class="sl">'+DIG(i+1)+'</span>'+DF.format(toDate(r.date))+'<span class="dsub">'+(sub!=null?sub:WF.format(toDate(r.date)))+'</span></td>';
-}
 function csvBtn(col){return '<button type="button" class="btn small" data-csv="'+col+'">Excel-এর জন্য ফাইল নামান (CSV)</button>';}
+function bookSites(v){
+  var m={};
+  S.entries.forEach(function(e){if(e.veku!==v)return;var k=e.site_id||'';var x=m[k]||(m[k]={id:k,hours:0,n:0,last:''});x.hours+=+e.hours||0;x.n++;if(e.date>x.last)x.last=e.date;});
+  return Object.keys(m).map(function(k){return m[k];}).sort(function(a,b){return a.last<b.last?1:a.last>b.last?-1:0;});
+}
+function curBookSite(){
+  var list=bookSites(S.veku),want=S.bookSite[S.veku];
+  if(want!=null&&list.some(function(x){return x.id===want;}))return want;
+  return list.length?list[0].id:null;
+}
+function bookRows(){var v=S.veku,sid=curBookSite();if(sid==null)return [];return S.entries.filter(function(e){return e.veku===v&&(e.site_id||'')===sid;}).sort(byDate);}
 function ledgerHTML(){
-  var v=S.veku,rows=rowsE(v),t={hours:0,litres:0,fuel:0,deposit:0,driver:0};
-  var h=vswitchHTML()+ledgerHead('ভেকুর দৈনিক হিসাব খাতা',rows,true);
-  if(!rows.length)return h+'<section class="empty">'+EXC+'<h2>'+pIn()+' '+esc(vName(v))+'-এর কোনো দৈনিক হিসাব নেই</h2><p>নিজে লিখুন, অথবা ড্রাইভারের পাঠানো হিসাব অনুমোদন করলে এখানে উঠবে।</p><div class="actions"><button type="button" class="btn primary" data-add="entry">দৈনিক হিসাব লিখুন</button></div></section>';
-  var multiSite=Object.keys(rows.reduce(function(a,r){var n=siteName(r);if(n)a[n]=1;return a;},{})).length>1;
+  var v=S.veku,sites=bookSites(v),sid=curBookSite();
+  var h=vswitchHTML();
+  if(!sites.length)return h+'<section class="empty">'+EXC+'<h2>'+esc(vName(v))+'-এর কোনো দৈনিক হিসাব নেই</h2><p>নিজে লিখুন, অথবা ড্রাইভারের পাঠানো হিসাব কনফার্ম করলে এখানে উঠবে।</p><div class="actions"><button type="button" class="btn primary" data-add="entry">দৈনিক কাজ লিখুন</button></div></section>';
+  h+='<div class="field"><span>'+esc(vName(v))+' কোন সাইটে কাজ করেছে</span><div class="chips" role="tablist">'+sites.map(function(x){
+    var st=x.id?siteBy(x.id):null,nm=x.id?(st?st.name:'সাইট'):'সাইট বাছাই করা নেই';
+    return '<button type="button" role="tab" data-bsite="'+esc(x.id)+'" aria-selected="'+(x.id===sid)+'">'+esc(nm)+'<small>'+q1(x.hours)+' ঘণ্টা'+(st&&st.status==='done'?' · শেষ':'')+'</small></button>';
+  }).join('')+'</div></div>';
+  var rows=bookRows(),site=sid?siteBy(sid):null,t={hours:0,litres:0,fuel:0,deposit:0,driver:0,income:0},drivers={};
+  rows.forEach(function(r){if(r.driver_id)drivers[r.driver_id]=1;});
+  var manyDrv=Object.keys(drivers).length>1;
   var body=rows.map(function(r,i){
-    t.hours+=+r.hours||0;t.litres+=+r.litres||0;t.fuel+=+r.fuel_cost||0;t.deposit+=+r.deposit||0;t.driver+=+r.driver_wage||0;
-    var extra=(r.fuel_src?'<span class="by">ডিজেল: '+esc(r.fuel_src)+(r.fuel_pay?' ('+PAYL[r.fuel_pay]+')':'')+'</span>':'')+(r.driver_id?'<span class="by">ড্রাইভার: '+esc(driverName(r.driver_id))+'</span>':'');
-    return '<tr class="click" tabindex="0" data-col="entries" data-id="'+esc(r.id)+'">'+dateCell(r,i,WF.format(toDate(r.date))+(multiSite&&siteName(r)?'<br>'+esc(siteName(r)):''))+
-      '<td class="n">'+(+r.hours?q1(r.hours):'—')+'</td><td class="n">'+(+r.litres?q1(r.litres):'—')+'</td><td class="n">'+(+r.fuel_cost?amt(r.fuel_cost):'—')+'</td><td class="n">'+(+r.deposit?amt(r.deposit):'—')+'</td><td class="n">'+(+r.driver_wage?amt(r.driver_wage):'—')+'</td>'+
-      '<td class="rm">'+esc(r.remarks||'')+extra+'</td></tr>';
+    t.hours+=+r.hours||0;t.litres+=+r.litres||0;t.fuel+=+r.fuel_cost||0;t.deposit+=+r.deposit||0;t.driver+=+r.driver_wage||0;t.income+=entryIncome(r);
+    return '<tr class="click" tabindex="0" data-col="entries" data-id="'+esc(r.id)+'"><td class="c1"><span class="sl">'+DIG(i+1)+'</span>'+sdate(r.date)+(r.remarks?'<span class="dnote">'+esc(r.remarks)+'</span>':'')+'</td>'+
+      '<td class="n">'+(+r.hours?q1(r.hours):'—')+'</td>'+
+      '<td class="n">'+(+r.fuel_cost?amt(r.fuel_cost)+'<span class="nsub">'+q1(r.litres)+' লি.'+(r.fuel_pay==='due'?' বাকি':'')+'</span>':'—')+'</td>'+
+      '<td class="n">'+(+r.deposit?amt(r.deposit):'—')+'</td>'+
+      '<td class="n">'+(+r.driver_wage?amt(r.driver_wage):'—')+(manyDrv&&r.driver_id?'<span class="nsub">'+esc(driverName(r.driver_id).replace(/^মোঃ\s*/,''))+'</span>':'')+'</td></tr>';
   }).join('');
-  h+='<div class="tbl-wrap"><table class="khata"><thead><tr>'+
-    '<th class="c1">ক্রমিক · তারিখ<small>SL · Date</small></th><th class="n">সময় (ঘণ্টা)<small>Time</small></th><th class="n">ডিজেল (লিটার)<small>Fuel in Litres</small></th><th class="n">ডিজেলের খরচ (৳)<small>Fuel Cost</small></th><th class="n">জমার পরিমাণ (৳)<small>Deposit Amount</small></th><th class="n">ভেকুর ড্রাইভার (৳)<small>Driver of Excavator</small></th><th>মন্তব্য<small>Remarks</small></th>'+
-    '</tr></thead><tbody>'+body+'</tbody><tfoot><tr><td class="c1">মোট</td><td class="n">'+q1(t.hours)+'</td><td class="n">'+q1(t.litres)+'</td><td class="n">'+amt(t.fuel)+'</td><td class="n">'+amt(t.deposit)+'</td><td class="n">'+amt(t.driver)+'</td><td></td></tr></tfoot></table></div>';
+  var first=rows.length?rows[0].date:null,last=rows.length?rows[rows.length-1].date:null;
+  h+='<div class="ledger-head"><div><p class="eyebrow">ভেকুর দৈনিক হিসাব খাতা · '+esc(vName(v))+'</p><h2>'+esc(site?site.name:'সাইট বাছাই করা নেই')+'</h2></div>'+
+    '<dl class="meta">'+(first?'<div><dt>সময়</dt><dd>'+sdate(first)+(last!==first?' থেকে '+sdate(last):'')+'</dd></div>':'')+'<div><dt>কাজের দিন</dt><dd>'+DIG(Object.keys(rows.reduce(function(a,r){if(+r.hours>0)a[r.date]=1;return a;},{})).length)+' দিন</dd></div></dl></div>';
+  h+='<div class="tbl-wrap"><table class="khata fit"><thead><tr><th class="c1">তারিখ</th><th class="n">ঘণ্টা</th><th class="n">ডিজেল ৳</th><th class="n">জমা ৳</th><th class="n">ড্রাইভার ৳</th></tr></thead><tbody>'+body+'</tbody>'+
+    '<tfoot><tr><td class="c1">মোট</td><td class="n">'+q1(t.hours)+'</td><td class="n">'+amt(t.fuel)+'<span class="nsub">'+q1(t.litres)+' লি.</span></td><td class="n">'+amt(t.deposit)+'</td><td class="n">'+amt(t.driver)+'</td></tr></tfoot></table></div>';
+  if(site&&sitePriced(site)){
+    var rates={};rows.forEach(function(r){if(+r.hours>0)rates[entryRate(r,site)]=1;});var rk=Object.keys(rates);
+    h+='<section class="panel"><dl class="facts">'+
+      '<div><dt>'+esc(vName(v))+'-এর কাজের দাম'+(site.bill_type!=='contract'&&rk.length===1?'<span class="by">'+q1(t.hours)+' ঘণ্টা × '+tk(+rk[0])+'</span>':'')+'</dt><dd>'+tk(t.income)+'</dd></div>'+
+      fact('দৈনিক খাতায় জমা পেয়েছেন',t.deposit,'pos')+
+      '<div><dt>'+esc(site.name)+'-এর কাছে মোট বাকি<span class="by">দুই ভেকু মিলে, আলাদা করে পাওয়া টাকাসহ</span></dt><dd class="'+(siteDue(site)>0?'neg':'pos')+'">'+tka(siteDue(site))+'</dd></div></dl>'+
+      '<button type="button" class="linkbtn" data-siteview="'+esc(site.id)+'">এই সাইটের পুরো হিসাব →</button></section>';
+  }
   return h+'<div class="below"><p class="hint">কোনো সারিতে চাপ দিলে সেটি বদলানো বা মুছে ফেলা যাবে।</p>'+csvBtn('entries')+'</div>';
 }
+function repRows(){
+  var v=S.veku,ss=S.settings.season_start;
+  return S.repairs.filter(function(r){return r.veku===v&&(S.repAll||!ss||r.date>=ss);}).sort(byDate);
+}
 function repairHTML(){
-  var v=S.veku,rows=rowsR(v),tot=0;
-  var h=vswitchHTML()+ledgerHead('অন্যান্য ও মেরামত খরচ',rows,false);
-  if(!rows.length)return h+'<section class="empty">'+EXC+'<h2>'+pIn()+' '+esc(vName(v))+'-এর কোনো মেরামত খরচ নেই</h2><p>মেরামত, যন্ত্রাংশ কেনা, মবিল-ফিল্টার বা অন্য যেকোনো খরচ এখানে লিখুন। এগুলো লাভ থেকে বাদ যাবে।</p><div class="actions"><button type="button" class="btn primary" data-add="repair">খরচ লিখুন</button></div></section>';
-  var body=rows.map(function(r,i){
-    tot+=+r.amount||0;
-    return '<tr class="click" tabindex="0" data-col="repairs" data-id="'+esc(r.id)+'">'+dateCell(r,i)+
-      '<td class="desc"><span class="chip">'+esc(r.kind||'অন্যান্য')+'</span>'+esc(r.description||'')+'</td><td class="n">'+amt(r.amount)+'</td><td class="rm">'+esc(r.remarks||'')+(r.paid_site_id?'<span class="by paidby">'+esc((siteBy(r.paid_site_id)||{name:'সাইট'}).name)+' দিয়েছে</span>':'')+'</td></tr>';
-  }).join('');
-  h+='<div class="tbl-wrap"><table class="khata narrow"><thead><tr><th class="c1">ক্রমিক · তারিখ<small>SL · Date</small></th><th>খরচের বিবরণ (মেরামত / যন্ত্রাংশ / অন্যান্য)<small>Description</small></th><th class="n">টাকা (৳)<small>Amount</small></th><th>মন্তব্য<small>Remarks</small></th></tr></thead><tbody>'+body+
-    '</tbody><tfoot><tr><td class="c1">মোট</td><td></td><td class="n">'+amt(tot)+'</td><td></td></tr></tfoot></table></div>';
-  return h+'<div class="below"><p class="hint">কোনো সারিতে চাপ দিলে সেটি বদলানো বা মুছে ফেলা যাবে।</p>'+csvBtn('repairs')+'</div>';
+  var v=S.veku,rows=repRows(),tot=0,ss=S.settings.season_start;
+  var older=ss&&!S.repAll?S.repairs.filter(function(r){return r.veku===v&&r.date<ss;}).length:0;
+  var h=vswitchHTML()+'<div class="ledger-head"><div><p class="eyebrow">অন্যান্য ও মেরামত খরচ</p><h2>'+esc(vName(v))+'</h2></div>'+
+    (ss?'<dl class="meta"><div><dt>সময়</dt><dd>'+(S.repAll?'সব সিজন':sdate(ss)+' থেকে (এই সিজন)')+'</dd></div></dl>':'')+'</div>';
+  if(!rows.length)h+='<section class="empty">'+EXC+'<h2>'+esc(vName(v))+'-এর কোনো খরচ লেখা নেই</h2><p>মেরামত, যন্ত্রাংশ, মবিল-ফিল্টার বা অন্য যেকোনো খরচ লিখুন। এগুলো লাভ থেকে বাদ যাবে।</p><div class="actions"><button type="button" class="btn primary" data-add="repair">খরচ লিখুন</button></div></section>';
+  else{
+    var body=rows.map(function(r,i){
+      tot+=+r.amount||0;
+      return '<tr class="click" tabindex="0" data-col="repairs" data-id="'+esc(r.id)+'"><td class="c1"><span class="sl">'+DIG(i+1)+'</span>'+sdate(r.date)+'</td>'+
+        '<td><span class="chip">'+esc(r.kind||'অন্যান্য')+'</span>'+esc(r.description||'')+(r.remarks?'<span class="dnote">'+esc(r.remarks)+'</span>':'')+(r.paid_site_id?'<span class="by paidby">'+esc((siteBy(r.paid_site_id)||{name:'সাইট'}).name)+' দিয়েছে</span>':'')+'</td><td class="n">'+amt(r.amount)+'</td></tr>';
+    }).join('');
+    h+='<div class="tbl-wrap"><table class="khata fit"><thead><tr><th class="c1">তারিখ</th><th>খরচের বিবরণ</th><th class="n">টাকা ৳</th></tr></thead><tbody>'+body+
+      '</tbody><tfoot><tr><td class="c1">মোট</td><td></td><td class="n">'+amt(tot)+'</td></tr></tfoot></table></div>';
+  }
+  if(older)h+='<button type="button" class="linkbtn" data-repall="1">আগের সিজনের '+DIG(older)+'টি খরচও দেখুন</button>';
+  else if(S.repAll&&ss)h+='<button type="button" class="linkbtn" data-repall="0">শুধু এই সিজনের খরচ দেখুন</button>';
+  return h+(rows.length?'<div class="below"><p class="hint">কোনো সারিতে চাপ দিলে সেটি বদলানো বা মুছে ফেলা যাবে।</p>'+csvBtn('repairs')+'</div>':'');
 }
 
 /* ----- statements ----- */
@@ -1176,8 +1205,9 @@ async function submitSheet(ev){
     closeSheet();
     var y=+date.slice(0,4),m=+date.slice(5,7);
     S.veku=F.veku;
-    if(S.month&&m!==S.month)S.month=m;
-    if(y!==S.year)S.year=y;
+    if(col==='entries')S.bookSite[F.veku]=data.site_id||'';
+    if(S.month&&m!==S.month&&S.tab!=='daily'&&S.tab!=='repair')S.month=m;
+    if(y!==S.year&&S.tab!=='daily'&&S.tab!=='repair')S.year=y;
     if(S.tab==='daily'&&col==='repairs')goTab('repair');
     if(S.tab==='repair'&&col==='entries')goTab('daily');
     toast(ap?'অনুমোদন হয়েছে, খাতায় উঠেছে':F.id?'হিসাব বদলানো হয়েছে':'হিসাব সংরক্ষিত হয়েছে');
@@ -1438,9 +1468,9 @@ async function delMini(){
 
 /* ---------- CSV ---------- */
 function downloadCSV(col){
-  var v=S.veku,rows=col==='entries'?rowsE(v):rowsR(v);
+  var v=S.veku,rows=col==='entries'?bookRows():repRows(),bs=col==='entries'?curBookSite():null,bsite=bs?siteBy(bs):null;
   function qq(s){return '"'+String(s==null?'':s).replace(/"/g,'""')+'"';}
-  var L=[[qq(vName(v)),qq(col==='entries'?'ভেকুর দৈনিক হিসাব':'অন্যান্য ও মেরামত খরচ'),qq((S.month?MONTHS[S.month-1]+' ':'')+S.year)]];
+  var L=[[qq(vName(v)),qq(col==='entries'?'ভেকুর দৈনিক হিসাব':'অন্যান্য ও মেরামত খরচ'),qq(col==='entries'?(bsite?bsite.name:'সাইট বাছাই করা নেই'):'')]];
   if(col==='entries'){
     L.push(['ক্রমিক নং','তারিখ','সাইট','সময় (ঘণ্টা)','ডিজেল (লিটার)','ডিজেলের খরচ (৳)','ডিজেল কোথা থেকে','নগদ/বাকি','জমার পরিমাণ (৳)','ভেকুর ড্রাইভার (৳)','ড্রাইভার','মন্তব্য'].map(qq));
     var t=[0,0,0,0,0];
@@ -1453,7 +1483,7 @@ function downloadCSV(col){
     L.push(['',qq('মোট'),'','',tot,'','']);
   }
   var text='﻿'+L.map(function(l){return l.join(',');}).join('\r\n');
-  saveFile((col==='entries'?'daily':'repair')+'-veku'+(v==='v1'?'1':'2')+'-'+S.year+(S.month?'-'+pad(S.month):'')+'.csv',text);
+  saveFile((col==='entries'?'daily':'repair')+'-veku'+(v==='v1'?'1':'2')+(bsite?'-'+bsite.name.replace(/[^\wঀ-৿]+/g,'-'):'')+'.csv',text);
 }
 function saveFile(fname,text){
   try{
@@ -1520,7 +1550,7 @@ function switchTab(t){
   goTab(t);if(S.tab==='owners'&&!S.ownersDirty)S.ownersDraft=null;
   render();window.scrollTo(0,0);
 }
-$('#fab').addEventListener('click',function(){openSheet(S.tab==='repair'?'repair':'entry',null);});
+$('#fab').addEventListener('click',function(){var bs=S.tab==='daily'?curBookSite():null;openSheet(S.tab==='repair'?'repair':'entry',null,null,bs?{siteId:bs}:{});});
 function rowOpen(tr){var col=tr.dataset.col,id=tr.dataset.id;var rec=S[col].filter(function(x){return x.id===id;})[0];if(rec)openSheet(col==='entries'?'entry':'repair',rec);}
 function siteGo(id){goTab('sites');S.openSite=id;render();window.scrollTo(0,0);}
 function sxOpen(tr){
@@ -1583,6 +1613,9 @@ document.addEventListener('click',function(e){
   if((x=t.closest('[data-add]'))){openSheet(x.dataset.add,null);return;}
   if((x=t.closest('[data-go]'))){if(x.dataset.veku)S.veku=x.dataset.veku;if(x.dataset.month){S.month=+x.dataset.month;S.year=now.getFullYear();}switchTab(x.dataset.go);return;}
   if((x=t.closest('[data-sub]'))){switchTab(x.dataset.sub);return;}
+  if((x=t.closest('[data-bsite]'))){S.bookSite[S.veku]=x.dataset.bsite;render();return;}
+  if((x=t.closest('[data-siteview]'))){siteGo(x.dataset.siteview);return;}
+  if((x=t.closest('[data-repall]'))){S.repAll=x.dataset.repall==='1';render();return;}
   if((x=t.closest('[data-quick]'))){quick(x.dataset.quick);return;}
   if((x=t.closest('.vswitch [data-veku]'))){S.veku=x.dataset.veku;render();return;}
   if((x=t.closest('[data-csv]'))){downloadCSV(x.dataset.csv);return;}
