@@ -489,6 +489,8 @@ function quick(k){
 
 /* ----- who paid: the owner from cash in hand, or a site straight from what it owes ----- */
 function payerDefault(kind){var v='';try{v=localStorage.getItem('veku-payer-'+kind)||'';}catch(e){}var x=v?siteBy(v):null;return x&&x.status!=='done'?v:'';}
+/* repairs and other excavator costs are paid by সি.ডি.বি ব্রিকস */
+function repairSiteDefault(){var x=S.sites.filter(function(s){return s.status!=='done'&&/সি\.?ডি\.?বি/.test(s.name);})[0];return x?x.id:'';}
 function payerRemember(kind,v){try{localStorage.setItem('veku-payer-'+kind,v||'');}catch(e){}}
 function payerHint(id){var x=id?siteBy(id):null;return x?('টাকাটা '+esc(x.name)+'-এর কাছে পাওনা থেকে কাটা যাবে। আপনার হাতের ক্যাশে লাগবে না।'):'আপনার হাতের ক্যাশ থেকে গেছে ধরা হবে।';}
 function payerHTML(cur,attr,siteOnly){
@@ -1243,7 +1245,7 @@ function openSheet(type,rec,ap,opts){
   $('#fDesc').value=rec&&!isE?(rec.description||''):'';
   $('#fAmount').value=rec&&!isE?shown(rec.amount):'';
   setKind(rec&&!isE?(rec.kind||'অন্যান্য'):'মেরামত');
-  F.payer=rec&&!isE?(rec.paid_site_id||''):payerDefault('repair');
+  F.payer=rec&&!isE?(rec.paid_site_id||''):(payerDefault('repair')||repairSiteDefault());
   $('#fPayerWrap').innerHTML=payerHTML(F.payer,'data-fpayer');
   $('#fRemarks').value=src?(src.remarks||''):'';
   fuelHint();autoFuel();autoWage();
