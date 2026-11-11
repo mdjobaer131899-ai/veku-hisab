@@ -648,7 +648,7 @@ function stmtTable(rows,heads,clickAttr){
 function driverStmtRows(list){
   if(!list)return null;
   return list.map(function(r){return {kind:r.kind,id:r.id,date:r.date,amount:+r.amount||0,
-    text:r.kind==='paid'?('টাকা নিয়েছেন'+(r.site&&r.site!==r.payer?' · '+esc(r.site)+'-এর হিসাবে':'')+(r.payer?' · <span class="paidby">'+esc(r.payer)+' দিয়েছে</span>':'')+(r.note?' · '+esc(r.note):'')):(esc(vName(r.veku))+(r.site?' · '+esc(r.site):'')+' · '+q1(r.hours)+' ঘণ্টা')};});
+    text:r.kind==='paid'?('টাকা নিয়েছেন'+(r.site?' · '+esc(r.site)+'-এর হিসাবে':'')+(r.note?' · '+esc(r.note):'')):(esc(vName(r.veku))+(r.site?' · '+esc(r.site):'')+' · '+q1(r.hours)+' ঘণ্টা')};});
 }
 function shopStmtRows(list){
   if(!list)return null;
@@ -1358,11 +1358,11 @@ function openMini(mode,o){
       '<div class="actions"><button type="button" class="btn small" data-copycred="1">সব কপি করুন</button></div><p class="hint">পাসওয়ার্ডটি এখনই লিখে রাখুন বা পাঠিয়ে দিন। পরে আর দেখা যাবে না, তবে নতুন পাসওয়ার্ড দেওয়া যাবে।</p>';
     M.cred='সাইট: '+siteUrl()+'\nমোবাইল: '+o.phone+'\nপাসওয়ার্ড: '+o.password;
   }else if(mode==='pay-driver'){
-    M.rec=o.rec||null;M.pick=!M.id;M.payer=o.rec?(o.rec.paid_site_id||''):payerDefault('driver');
+    M.rec=o.rec||null;M.pick=!M.id;M.payer='';
     title=M.pick?'ড্রাইভারকে টাকা দিলাম':driverName(M.id)+'-কে টাকা দিলেন';
     body=(M.pick?pickHTML('কোন ড্রাইভারকে',activeDrivers().map(function(x){var b=dBal(x.id).bal;return [x.id,x.name+(b>0?' · পাবে '+tk(b):b<0?' · বেশি নিয়েছে '+tka(b):'')];})):
       '<p class="from">'+(dBal(M.id).bal<0?'এখন বেশি নিয়েছে: ':'এখন বাকি পাবে: ')+tka(dBal(M.id).bal)+'</p>')+payFields(o.rec)+
-      acctSiteHTML(o.rec?(o.rec.site_id||''):(M.payer||(M.pick?'':drvLastSite(M.id))),M.id)+payerHTML(M.payer,'data-mpayer');
+      acctSiteHTML(o.rec?(o.rec.site_id||''):(M.pick?'':drvLastSite(M.id)),M.id)+'<p class="hint">সাইটের জমা টাকা থেকে দেওয়া। সাইটের পাওনায় কোনো যোগ-বিয়োগ হবে না।</p>';
     if(o.rec)del='মুছে ফেলুন';
   }else if(mode==='pay-shop'){
     M.rec=o.rec||null;M.pick=!M.shop;M.payer='';
@@ -1477,16 +1477,15 @@ async function submitMini(ev){
       var date=$('#mDate').value,amount=num($('#mAmount').value);
       if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return mErr('তারিখ দিন।');
       if(!(amount>0))return mErr('কত টাকা, লিখুন।');
-      var rec={date:date,amount:amount,note:$('#mNote').value.trim(),paid_site_id:M.payer||null};
+      var rec={date:date,amount:amount,note:$('#mNote').value.trim(),paid_site_id:null};
       if(mode==='pay-driver'){var sv=$('#mSite').value;if(!sv)return mErr('কোন সাইটের হিসাবে দিলেন, বাছুন।');rec.site_id=sv==='none'?null:sv;}
       if(mode==='pay-shop'){var fs=$('#mShopSite')&&$('#mShopSite').value;if(!fs)return mErr('কোন সাইটের ডিজেলের টাকা, বাছুন।');rec.for_site_id=fs;rec.paid_site_id=null;}
       busy();
       var table=mode==='pay-driver'?'driver_payments':'shop_payments';
       if(M.rec)await q(sb.from(table).update(rec).eq('id',M.rec.id));
-      else{if(mode==='pay-driver')rec.driver_id=M.pick?pk:M.id;else rec.shop=M.pick?pk:M.shop;await q(sb.from(table).insert(rec));if(mode==='pay-driver')payerRemember('driver',M.payer);}
+      else{if(mode==='pay-driver')rec.driver_id=M.pick?pk:M.id;else rec.shop=M.pick?pk:M.shop;await q(sb.from(table).insert(rec));}
       await reloadBal();
-      var who=mode==='pay-driver'&&M.payer&&siteBy(M.payer)?siteBy(M.payer).name:'';
-      toast(who?'সংরক্ষিত হয়েছে · '+who+'-এর পাওনা থেকে কাটা হয়েছে':'সংরক্ষিত হয়েছে');
+      toast('সংরক্ষিত হয়েছে');
     }else if(mode==='shop-new'){
       var nm=$('#mName').value.trim();if(!nm)return mErr('দোকান বা পাম্পের নাম লিখুন।');
       if(shopNames().indexOf(nm)>=0)return mErr('এই নাম আগেই তালিকায় আছে।');
@@ -1723,7 +1722,7 @@ document.addEventListener('click',function(e){
   if((x=t.closest('tr[data-spay]'))){spayOpen(x);return;}
   if((x=t.closest('[data-mine]'))){mineOpen(x);return;}
 });
-document.addEventListener('change',function(e){if(e.target&&e.target.matches&&e.target.matches('#mini [data-mpayer]')){M.payer=e.target.value;payerPick($('#miniBody'),'data-mpayer',M.payer);var ms=$('#mSite');if(M.mode==='pay-driver'&&ms&&M.payer)ms.value=M.payer;return;}if(e.target&&e.target.id==='mPick'&&M&&M.mode==='pay-shop'){var w=$('#mShopSiteWrap');if(w)w.innerHTML=e.target.value?shopSiteHTML(shopTopSite(e.target.value),e.target.value):'';return;}if(e.target&&e.target.id==='mPick'&&M&&M.mode==='pay-driver'){var ms=$('#mSite');if(ms&&!ms.value){var ls=drvLastSite(e.target.value);if(ls)ms.value=ls;}return;}if(e.target&&e.target.id==='mLogin'){$('#mPwWrap').hidden=!e.target.checked;if(e.target.checked&&!$('#mPass').value)$('#mPass').value=genPw();}});
+document.addEventListener('change',function(e){if(e.target&&e.target.id==='mPick'&&M&&M.mode==='pay-shop'){var w=$('#mShopSiteWrap');if(w)w.innerHTML=e.target.value?shopSiteHTML(shopTopSite(e.target.value),e.target.value):'';return;}if(e.target&&e.target.id==='mPick'&&M&&M.mode==='pay-driver'){var ms=$('#mSite');if(ms&&!ms.value){var ls=drvLastSite(e.target.value);if(ls)ms.value=ls;}return;}if(e.target&&e.target.id==='mLogin'){$('#mPwWrap').hidden=!e.target.checked;if(e.target.checked&&!$('#mPass').value)$('#mPass').value=genPw();}});
 document.addEventListener('keydown',function(e){
   if(e.key==='Enter'&&e.target&&e.target.dataset&&e.target.dataset.apdep){e.preventDefault();var bt=document.querySelector('[data-apgo="'+e.target.dataset.apdep+'"]');if(bt)quickApprove(e.target.dataset.apdep,bt);return;}
   if(!(e.key==='Enter'||e.key===' ')||!e.target.matches)return;

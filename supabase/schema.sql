@@ -680,3 +680,6 @@ begin
   ) x;
   return v;
 end $$;
+
+-- a site's money reaches the account only as জমা; drivers are always paid out of that money in hand
+update public.driver_payments set paid_site_id = null where paid_site_id is not null;
