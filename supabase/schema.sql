@@ -621,3 +621,34 @@ begin
 end $$;
 revoke execute on function public.site_breakdown() from public, anon;
 grant execute on function public.site_breakdown() to authenticated;
+-- which site's account a payment to a driver is booked against
+-- (separate from paid_site_id, which says a site handed the money over itself)
+alter table public.driver_payments add column if not exists site_id uuid references public.sites(id) on delete set null;
+create index if not exists driver_payments_site_idx on public.driver_payments(site_id) where site_id is not null;
+
+-- statements: paid rows now carry the site whose account they are booked to,
+-- and both site ids, so an edit keeps them
+create or replace function public.driver_statement(p_driver uuid) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare v jsonb;
+begin
+  if not public.is_owner() and (public.my_driver_id() is null or public.my_driver_id() <> p_driver) then
+    raise exception 'not allowed' using errcode = '42501';
+  end if;
+  select coalesce(jsonb_agg(to_jsonb(x) order by x.date desc, x.created_at desc), '[]'::jsonb) into v from (
+    select * from (
+      select 'earn'::text as kind, e.id, e.date, e.veku, e.hours, e.driver_wage as amount, ''::text as note, e.created_at,
+          coalesce(ws.name, e.site, '') as site, ''::text as payer, e.site_id, null::uuid as paid_site_id
+        from public.entries e left join public.sites ws on ws.id = e.site_id
+        where e.driver_id = p_driver and e.driver_wage <> 0
+      union all
+      select 'paid'::text, p.id, p.date, null::text, null::numeric, p.amount, p.note, p.created_at,
+          coalesce(acc.name, ''), coalesce(ps.name, ''), p.site_id, p.paid_site_id
+        from public.driver_payments p
+          left join public.sites ps on ps.id = p.paid_site_id
+          left join public.sites acc on acc.id = p.site_id
+        where p.driver_id = p_driver
+    ) u order by u.date desc, u.created_at desc limit 300
+  ) x;
+  return v;
+end $$;

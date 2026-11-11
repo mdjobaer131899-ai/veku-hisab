@@ -85,12 +85,12 @@ function fnErrText(e){return FNERR[e&&e.code]||errText(e);}
 
 /* ---------- state ---------- */
 var S={phase:'boot',role:null,user:null,needSetup:false,tab:'home',bookSite:{},repAll:false,sub:{book:'daily',acc:'sites',own:'sum'},brk:null,siteExtra:{},veku:'v1',year:now.getFullYear(),month:now.getMonth()+1,
-  settings:normSettings(null),drivers:[],entries:[],repairs:[],pending:[],dbal:{},sbal:[],sites:[],ssum:{},sitePays:[],ownerTx:[],cash:null,season:null,seasonFrom:'',seasonTo:'',
+  settings:normSettings(null),drivers:[],entries:[],repairs:[],pending:[],dbal:{},dpaid:{},sbal:[],sites:[],ssum:{},sitePays:[],ownerTx:[],cash:null,season:null,seasonFrom:'',seasonTo:'',
   openDriver:null,openShop:null,openSite:null,stmt:{},shopStmt:{},siteStmt:{},
   acct:null,pub:{vekus:normVekus(),shops:[],sites:[]},mine:[],openMine:false,apDep:{},
   loadErr:'',ownersDraft:null,ownersDirty:false,shown:''};
 function resetData(){
-  S.settings=normSettings(null);S.drivers=[];S.entries=[];S.repairs=[];S.pending=[];S.dbal={};S.sbal=[];S.stmt={};S.shopStmt={};
+  S.settings=normSettings(null);S.drivers=[];S.entries=[];S.repairs=[];S.pending=[];S.dbal={};S.dpaid={};S.sbal=[];S.stmt={};S.shopStmt={};
   S.sites=[];S.ssum={};S.siteStmt={};S.openSite=null;S.sitePays=[];S.ownerTx=[];S.cash=null;S.season=null;S.seasonFrom='';S.seasonTo='';S.apDep={};
   S.acct=null;S.mine=[];S.ownersDraft=null;S.ownersDirty=false;S.tab='home';S.brk=null;S.siteExtra={};S.openDriver=null;S.openShop=null;
 }
@@ -126,10 +126,13 @@ function setBrk(rows){
   });
   S.brk=b;
 }
+/* what each driver has taken, by the site whose account it was booked to ('' = no site chosen) */
+function qDpaid(){return fetchAll(function(){return sb.from('driver_payments').select('driver_id,site_id,amount').order('date').order('created_at');}).catch(function(){return null;});}
+function setDpaid(rows){var m={};(rows||[]).forEach(function(r){var x=m[r.driver_id]||(m[r.driver_id]={});var k=r.site_id||'';x[k]=(x[k]||0)+(+r.amount||0);});S.dpaid=m;}
 function setSsum(rows){var m={};(rows||[]).forEach(function(r){m[r.site_id]=r;});S.ssum=m;}
 async function loadOwner(){
-  var r=await Promise.all([qSettings(),qDrivers(),qEntries(),qRepairs(),qPending(),q(sb.rpc('driver_balances')),q(sb.rpc('shop_balances')),qSites(),q(sb.rpc('site_totals')),qSitePays(),qOwnerTx(),qWork(),qBrk()]);
-  S.settings=normSettings(r[0]);S.drivers=r[1]||[];S.entries=r[2];S.repairs=r[3];S.pending=r[4]||[];setDbal(r[5]);S.sbal=r[6]||[];S.sites=r[7]||[];setSsum(r[8]);S.sitePays=r[9]||[];S.ownerTx=r[10]||[];setDwork(r[11]);setBrk(r[12]);
+  var r=await Promise.all([qSettings(),qDrivers(),qEntries(),qRepairs(),qPending(),q(sb.rpc('driver_balances')),q(sb.rpc('shop_balances')),qSites(),q(sb.rpc('site_totals')),qSitePays(),qOwnerTx(),qWork(),qBrk(),qDpaid()]);
+  S.settings=normSettings(r[0]);S.drivers=r[1]||[];S.entries=r[2];S.repairs=r[3];S.pending=r[4]||[];setDbal(r[5]);S.sbal=r[6]||[];S.sites=r[7]||[];setSsum(r[8]);S.sitePays=r[9]||[];S.ownerTx=r[10]||[];setDwork(r[11]);setBrk(r[12]);setDpaid(r[13]);
   if(S.settings.owners.some(function(o){return !o.id;})){var st=clone(S.settings);st.owners.forEach(function(o){if(!o.id)o.id=uid();});saveSettings(st).catch(function(){});}
 }
 function qSitePays(){return fetchAll(function(){return sb.from('site_payments').select('*').order('date').order('created_at');});}
@@ -137,7 +140,7 @@ function qOwnerTx(){return fetchAll(function(){return sb.from('owner_tx').select
 async function reloadSitePays(){S.sitePays=await qSitePays();S.cash=null;}
 async function reloadOwnerTx(){S.ownerTx=await qOwnerTx();S.cash=null;}
 async function reloadYear(){var r=await Promise.all([qEntries(),qRepairs()]);S.entries=r[0];S.repairs=r[1];S.cash=null;}
-async function reloadBal(){var r=await Promise.all([q(sb.rpc('driver_balances')),q(sb.rpc('shop_balances')),q(sb.rpc('site_totals')),qWork(),qBrk()]);setDbal(r[0]);S.sbal=r[1]||[];setSsum(r[2]);setDwork(r[3]);setBrk(r[4]);S.stmt={};S.shopStmt={};S.siteStmt={};S.siteExtra={};S.cash=null;}
+async function reloadBal(){var r=await Promise.all([q(sb.rpc('driver_balances')),q(sb.rpc('shop_balances')),q(sb.rpc('site_totals')),qWork(),qBrk(),qDpaid()]);setDbal(r[0]);S.sbal=r[1]||[];setSsum(r[2]);setDwork(r[3]);setBrk(r[4]);setDpaid(r[5]);S.stmt={};S.shopStmt={};S.siteStmt={};S.siteExtra={};S.cash=null;}
 async function reloadSites(){S.sites=await qSites()||[];}
 async function reloadDrivers(){S.drivers=await qDrivers()||[];}
 async function reloadSettings(){S.settings=normSettings(await qSettings());}
@@ -492,6 +495,16 @@ function payerHTML(cur,attr){
   return '<fieldset class="field"><legend>টাকা কে দিল</legend><div class="seg2 payseg">'+opts.map(function(o){return '<button type="button" '+attr+'="'+esc(o[0])+'" aria-pressed="'+(o[0]===(cur||''))+'"><span>'+esc(o[1])+'<small>'+o[2]+'</small></span></button>';}).join('')+'</div><p class="hint payhint">'+payerHint(cur)+'</p></fieldset>';
 }
 function payerPick(root,attr,v){root.querySelectorAll('['+attr+']').forEach(function(b){b.setAttribute('aria-pressed',String(b.getAttribute(attr)===v));});var hn=root.querySelector('.payhint');if(hn)hn.innerHTML=payerHint(v);}
+/* which site's account a driver payment goes to */
+function drvLastSite(id){var e=S.entries.filter(function(x){return x.driver_id===id&&x.site_id;});return e.length?e[e.length-1].site_id:'';}
+function acctSiteHTML(cur,drv){
+  var mine=drv&&S.brk&&S.brk.drvWork[drv]?S.brk.drvWork[drv].map(function(x){return x.site_id;}):[];
+  var list=S.sites.filter(function(s){return s.status!=='done'||mine.indexOf(s.id)>=0||s.id===cur;});
+  list.sort(function(a,b){return (mine.indexOf(b.id)>=0?1:0)-(mine.indexOf(a.id)>=0?1:0);});
+  return '<label class="field"><span>কোন সাইটের হিসাবে</span><select id="mSite"><option value="">— সাইট বাছুন —</option>'+
+    list.map(function(s){return '<option value="'+esc(s.id)+'"'+(s.id===cur?' selected':'')+'>'+esc(s.name)+'</option>';}).join('')+
+    '<option value="none"'+(cur==='none'?' selected':'')+'>কোনো সাইটের হিসাবে নয়</option></select></label>';
+}
 function pickHTML(label,opts){return '<label class="field"><span>'+label+'</span><select id="mPick"><option value="">— বাছুন —</option>'+opts.map(function(o){return '<option value="'+esc(o[0])+'">'+esc(o[1])+'</option>';}).join('')+'</select></label>';}
 
 /* ----- owner: approvals ----- */
@@ -632,7 +645,7 @@ function stmtTable(rows,heads,clickAttr){
 function driverStmtRows(list){
   if(!list)return null;
   return list.map(function(r){return {kind:r.kind,id:r.id,date:r.date,amount:+r.amount||0,
-    text:r.kind==='paid'?('টাকা নিয়েছেন'+(r.payer?' · <span class="paidby">'+esc(r.payer)+' দিয়েছে</span>':'')+(r.note?' · '+esc(r.note):'')):(esc(vName(r.veku))+(r.site?' · '+esc(r.site):'')+' · '+q1(r.hours)+' ঘণ্টা')};});
+    text:r.kind==='paid'?('টাকা নিয়েছেন'+(r.site&&r.site!==r.payer?' · '+esc(r.site)+'-এর হিসাবে':'')+(r.payer?' · <span class="paidby">'+esc(r.payer)+' দিয়েছে</span>':'')+(r.note?' · '+esc(r.note):'')):(esc(vName(r.veku))+(r.site?' · '+esc(r.site):'')+' · '+q1(r.hours)+' ঘণ্টা')};});
 }
 function shopStmtRows(list){
   if(!list)return null;
@@ -679,11 +692,22 @@ function wtableHTML(title,head,rows,foot){
     rows.map(function(r){return '<tr>'+r.map(function(c,i){return '<td'+(i?' class="n"':'')+'>'+c+'</td>';}).join('')+'</tr>';}).join('')+'</tbody>'+
     (foot?'<tfoot><tr>'+foot.map(function(c,i){return '<td'+(i?' class="n"':'')+'>'+c+'</td>';}).join('')+'</tr></tfoot>':'')+'</table></div>';
 }
+/* per site: what the driver earned there, what he took against that site's account, what is left */
+function driverSiteAcct(id){
+  var w=(S.brk&&S.brk.drvWork[id])||[],p=S.dpaid[id]||{},m={},order=[];
+  function g(k){if(!m[k]){m[k]={site_id:k,hours:0,bill:0,paid:0};order.push(k);}return m[k];}
+  w.forEach(function(x){var r=g(x.site_id||'');r.hours+=x.hours;r.bill+=x.amount;});
+  var rest=dBal(id).earned-sum(w,function(x){return x.amount;});if(S.brk&&Math.abs(rest)>0.5)g('').bill+=rest;
+  Object.keys(p).forEach(function(k){g(k).paid+=p[k];});
+  return order.map(function(k){return m[k];}).sort(function(a,b){return (a.site_id?0:1)-(b.site_id?0:1)||b.hours-a.hours||b.paid-a.paid;});
+}
+function leftCell(n){n=Math.round(+n||0);return n>0?'<span class="pos">'+tk(n)+'</span>':n<0?'<span class="neg">বেশি '+tka(n)+'</span>':'শোধ';}
 function driverSitesHTML(id){
-  var w=S.brk&&S.brk.drvWork[id];if(!w||!w.length)return '';
-  w=w.slice().sort(function(a,b){return b.hours-a.hours;});
-  var rows=w.map(function(x){var st=siteBy(x.site_id);return [esc(st?st.name:'সাইট'),q1(x.hours),tk(x.amount)];});
-  return wtableHTML('কোন সাইটে কত মজুরি',['সাইট','ঘণ্টা','মজুরি'],rows,w.length>1?['মোট',q1(sum(w,function(x){return x.hours;})),tk(sum(w,function(x){return x.amount;}))]:null);
+  var L=driverSiteAcct(id);if(!L.length)return '';
+  var rows=L.map(function(r){var st=r.site_id?siteBy(r.site_id):null;
+    return [(r.site_id?esc(st?st.name:'সাইট'):'সাইট বাছা নেই')+(r.hours?'<small class="wsub">'+q1(r.hours)+' ঘণ্টা</small>':''),r.bill?tk(r.bill):'—',r.paid?tk(r.paid):'—',leftCell(r.bill-r.paid)];});
+  var tb=sum(L,function(r){return r.bill;}),tp=sum(L,function(r){return r.paid;});
+  return wtableHTML('সাইটভিত্তিক হিসাব',['সাইট','বিল','নিয়েছে','বাকি'],rows,L.length>1?['মোট',tk(tb),tk(tp),leftCell(tb-tp)]:null);
 }
 
 /* ----- owner: drivers ----- */
@@ -771,10 +795,15 @@ function siteCardHTML(s,pm){
 }
 function sitePaysSum(id){return sum(S.sitePays.filter(function(p){return p.site_id===id;}),function(p){return p.amount;});}
 function siteDriversHTML(id){
-  var w=S.brk&&S.brk.work[id];if(!w||!w.length)return '';
-  w=w.slice().sort(function(a,b){return b.hours-a.hours;});
-  var rows=w.map(function(x){return [esc(driverName(x.driver_id)),q1(x.hours),tk(x.amount)];});
-  return wtableHTML('এই সাইটে ড্রাইভারের মজুরি',['ড্রাইভার','ঘণ্টা','মজুরি'],rows,w.length>1?['মোট',q1(sum(w,function(x){return x.hours;})),tk(sum(w,function(x){return x.amount;}))]:null);
+  var w=(S.brk&&S.brk.work[id])||[],m={},order=[];
+  function g(k){if(!m[k]){m[k]={driver_id:k,hours:0,bill:0,paid:0};order.push(k);}return m[k];}
+  w.forEach(function(x){var r=g(x.driver_id);r.hours+=x.hours;r.bill+=x.amount;});
+  Object.keys(S.dpaid).forEach(function(d){var a=S.dpaid[d][id];if(a)g(d).paid+=a;});
+  if(!order.length)return '';
+  var L=order.map(function(k){return m[k];}).sort(function(a,b){return b.hours-a.hours;});
+  var rows=L.map(function(r){return [esc(driverName(r.driver_id))+(r.hours?'<small class="wsub">'+q1(r.hours)+' ঘণ্টা</small>':''),r.bill?tk(r.bill):'—',r.paid?tk(r.paid):'—',leftCell(r.bill-r.paid)];});
+  var tb=sum(L,function(r){return r.bill;}),tp=sum(L,function(r){return r.paid;});
+  return wtableHTML('এই সাইটে ড্রাইভারের হিসাব',['ড্রাইভার','বিল','নিয়েছে','বাকি'],rows,L.length>1?['মোট',tk(tb),tk(tp),leftCell(tb-tp)]:null);
 }
 var XLABEL={repair:function(r){return 'ভেকুর খরচ: '+esc(r.description||'')+' ('+esc(vName(r.veku))+')';},driver:function(r){return esc(driverName(r.driver_id))+'-কে টাকা দিয়েছে';},shop:function(r){return esc(r.shop)+'-কে ডিজেলের টাকা দিয়েছে';}};
 function siteRows(s){
@@ -1272,7 +1301,8 @@ function openMini(mode,o){
     M.rec=o.rec||null;M.pick=!M.id;M.payer=o.rec?(o.rec.paid_site_id||''):payerDefault('driver');
     title=M.pick?'ড্রাইভারকে টাকা দিলাম':driverName(M.id)+'-কে টাকা দিলেন';
     body=(M.pick?pickHTML('কোন ড্রাইভারকে',activeDrivers().map(function(x){var b=dBal(x.id).bal;return [x.id,x.name+(b>0?' · পাবে '+tk(b):b<0?' · বেশি নিয়েছে '+tka(b):'')];})):
-      '<p class="from">'+(dBal(M.id).bal<0?'এখন বেশি নিয়েছে: ':'এখন বাকি পাবে: ')+tka(dBal(M.id).bal)+'</p>')+payFields(o.rec)+payerHTML(M.payer,'data-mpayer');
+      '<p class="from">'+(dBal(M.id).bal<0?'এখন বেশি নিয়েছে: ':'এখন বাকি পাবে: ')+tka(dBal(M.id).bal)+'</p>')+payFields(o.rec)+
+      acctSiteHTML(o.rec?(o.rec.site_id||''):(M.payer||(M.pick?'':drvLastSite(M.id))),M.id)+payerHTML(M.payer,'data-mpayer');
     if(o.rec)del='মুছে ফেলুন';
   }else if(mode==='pay-shop'){
     M.rec=o.rec||null;M.pick=!M.shop;M.payer=o.rec?(o.rec.paid_site_id||''):payerDefault('shop');
@@ -1388,6 +1418,7 @@ async function submitMini(ev){
       if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return mErr('তারিখ দিন।');
       if(!(amount>0))return mErr('কত টাকা, লিখুন।');
       var rec={date:date,amount:amount,note:$('#mNote').value.trim(),paid_site_id:M.payer||null};
+      if(mode==='pay-driver'){var sv=$('#mSite').value;if(!sv)return mErr('কোন সাইটের হিসাবে দিলেন, বাছুন।');rec.site_id=sv==='none'?null:sv;}
       busy();
       var table=mode==='pay-driver'?'driver_payments':'shop_payments';
       if(M.rec)await q(sb.from(table).update(rec).eq('id',M.rec.id));
@@ -1571,7 +1602,7 @@ document.addEventListener('click',function(e){
   if((x=t.closest('#mini [data-genpw]'))){var inp=document.getElementById(x.dataset.genpw);if(inp)inp.value=genPw();return;}
   if((x=t.closest('#mini [data-mgo]'))){openMini(x.dataset.mgo,{driver:M.driver});return;}
   if((x=t.closest('#mini [data-copycred]'))){copyText(M.cred,$('#credBox'));return;}
-  if((x=t.closest('#mini [data-mpayer]'))){M.payer=x.dataset.mpayer;payerPick($('#miniBody'),'data-mpayer',M.payer);return;}
+  if((x=t.closest('#mini [data-mpayer]'))){M.payer=x.dataset.mpayer;payerPick($('#miniBody'),'data-mpayer',M.payer);var ms=$('#mSite');if(M.mode==='pay-driver'&&ms&&M.payer)ms.value=M.payer;return;}
   if(t.closest('#mini'))return;
   var a=t.closest('[data-act]');
   if(a){
@@ -1632,7 +1663,7 @@ document.addEventListener('click',function(e){
   if((x=t.closest('tr[data-spay]'))){spayOpen(x);return;}
   if((x=t.closest('[data-mine]'))){mineOpen(x);return;}
 });
-document.addEventListener('change',function(e){if(e.target&&e.target.id==='mLogin'){$('#mPwWrap').hidden=!e.target.checked;if(e.target.checked&&!$('#mPass').value)$('#mPass').value=genPw();}});
+document.addEventListener('change',function(e){if(e.target&&e.target.id==='mPick'&&M&&M.mode==='pay-driver'){var ms=$('#mSite');if(ms&&!ms.value){var ls=drvLastSite(e.target.value);if(ls)ms.value=ls;}return;}if(e.target&&e.target.id==='mLogin'){$('#mPwWrap').hidden=!e.target.checked;if(e.target.checked&&!$('#mPass').value)$('#mPass').value=genPw();}});
 document.addEventListener('keydown',function(e){
   if(e.key==='Enter'&&e.target&&e.target.dataset&&e.target.dataset.apdep){e.preventDefault();var bt=document.querySelector('[data-apgo="'+e.target.dataset.apdep+'"]');if(bt)quickApprove(e.target.dataset.apdep,bt);return;}
   if(!(e.key==='Enter'||e.key===' ')||!e.target.matches)return;
