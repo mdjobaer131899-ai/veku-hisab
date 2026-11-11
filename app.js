@@ -85,7 +85,7 @@ function fnErrText(e){return FNERR[e&&e.code]||errText(e);}
 
 /* ---------- state ---------- */
 var S={phase:'boot',role:null,user:null,needSetup:false,tab:'home',bookSite:{},repAll:false,sub:{book:'daily',acc:'sites',own:'sum'},brk:null,siteExtra:{},veku:'v1',year:now.getFullYear(),month:now.getMonth()+1,
-  settings:normSettings(null),drivers:[],entries:[],repairs:[],pending:[],dbal:{},dpaid:{},spaid:{},sbal:[],sites:[],ssum:{},sitePays:[],ownerTx:[],cash:null,season:null,seasonFrom:'',seasonTo:'',
+  settings:normSettings(null),drivers:[],entries:[],repairs:[],pending:[],dbal:{},dpaid:{},dpays:[],spaid:{},sbal:[],sites:[],ssum:{},sitePays:[],ownerTx:[],cash:null,season:null,seasonFrom:'',seasonTo:'',
   openDriver:null,openShop:null,openSite:null,stmt:{},shopStmt:{},siteStmt:{},
   acct:null,pub:{vekus:normVekus(),shops:[],sites:[]},mine:[],openMine:false,apDep:{},
   loadErr:'',ownersDraft:null,ownersDirty:false,shown:''};
@@ -127,8 +127,8 @@ function setBrk(rows){
   S.brk=b;
 }
 /* what each driver has taken, by the site whose account it was booked to ('' = no site chosen) */
-function qDpaid(){return fetchAll(function(){return sb.from('driver_payments').select('driver_id,site_id,amount').order('date').order('created_at');}).catch(function(){return null;});}
-function setDpaid(rows){var m={};(rows||[]).forEach(function(r){var x=m[r.driver_id]||(m[r.driver_id]={});var k=r.site_id||'';x[k]=(x[k]||0)+(+r.amount||0);});S.dpaid=m;}
+function qDpaid(){return fetchAll(function(){return sb.from('driver_payments').select('id,driver_id,site_id,amount,date').order('date').order('created_at');}).catch(function(){return null;});}
+function setDpaid(rows){S.dpays=rows||[];var m={};(rows||[]).forEach(function(r){var x=m[r.driver_id]||(m[r.driver_id]={});var k=r.site_id||'';x[k]=(x[k]||0)+(+r.amount||0);});S.dpaid=m;}
 function qSpaid(){return fetchAll(function(){return sb.from('shop_payments').select('shop,for_site_id,amount').order('date').order('created_at');}).catch(function(){return null;});}
 function setSpaid(rows){var m={};(rows||[]).forEach(function(r){var x=m[r.shop]||(m[r.shop]={});var k=r.for_site_id||'';x[k]=(x[k]||0)+(+r.amount||0);});S.spaid=m;}
 function setSsum(rows){var m={};(rows||[]).forEach(function(r){m[r.site_id]=r;});S.ssum=m;}
@@ -588,30 +588,31 @@ function ledgerHTML(){
     var st=x.id?siteBy(x.id):null,nm=x.id?(st?st.name:'সাইট'):'সাইট বাছাই করা নেই';
     return '<button type="button" role="tab" data-bsite="'+esc(x.id)+'" aria-selected="'+(x.id===sid)+'">'+esc(nm)+'<small>'+q1(x.hours)+' ঘণ্টা'+(st&&st.status==='done'?' · শেষ':'')+'</small></button>';
   }).join('')+'</div></div>';
-  var rows=bookRows(),site=sid?siteBy(sid):null,t={hours:0,litres:0,fuel:0,deposit:0,driver:0,income:0},drivers={};
-  rows.forEach(function(r){if(r.driver_id)drivers[r.driver_id]=1;});
-  var manyDrv=Object.keys(drivers).length>1;
-  var body=rows.map(function(r,i){
-    t.hours+=+r.hours||0;t.litres+=+r.litres||0;t.fuel+=+r.fuel_cost||0;t.deposit+=+r.deposit||0;t.driver+=+r.driver_wage||0;t.income+=entryIncome(r);
-    return '<tr class="click" tabindex="0" data-col="entries" data-id="'+esc(r.id)+'"><td class="c1"><span class="sl">'+DIG(i+1)+'</span>'+sdate(r.date)+(r.remarks?'<span class="dnote">'+esc(r.remarks)+'</span>':'')+'</td>'+
+  /* the page mirrors the paper ledger: the driver column is the money handed to the driver that day, not his wage */
+  var ents=bookRows(),site=sid?siteBy(sid):null,t={hours:0,litres:0,fuel:0,deposit:0,driver:0},drivers={};
+  ents.forEach(function(r){if(r.driver_id)drivers[r.driver_id]=1;});
+  var pays=sid?(S.dpays||[]).filter(function(p){return p.site_id===sid&&drivers[p.driver_id];}):[];
+  var byDay={};pays.forEach(function(p){(byDay[p.date]=byDay[p.date]||[]).push(p);});
+  var rows=ents.map(function(e){return {e:e,date:e.date};});
+  var seen={};rows.forEach(function(r){if(byDay[r.date]&&!seen[r.date]){r.pays=byDay[r.date];seen[r.date]=1;}});
+  Object.keys(byDay).forEach(function(d){if(!seen[d])rows.push({date:d,pays:byDay[d]});});
+  rows.sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:0;});
+  var body=rows.map(function(x,i){
+    var r=x.e||{},paid=sum(x.pays||[],function(p){return p.amount;});
+    t.hours+=+r.hours||0;t.litres+=+r.litres||0;t.fuel+=+r.fuel_cost||0;t.deposit+=+r.deposit||0;t.driver+=paid;
+    var ck=x.e?' class="click" tabindex="0" data-col="entries" data-id="'+esc(r.id)+'"':'';
+    return '<tr'+ck+'><td class="c1"><span class="sl">'+DIG(i+1)+'</span>'+sdate(x.date)+(r.remarks?'<span class="dnote">'+esc(r.remarks)+'</span>':'')+'</td>'+
       '<td class="n">'+(+r.hours?q1(r.hours):'—')+'</td>'+
-      '<td class="n">'+(+r.fuel_cost?amt(r.fuel_cost)+'<span class="nsub">'+q1(r.litres)+' লি.'+(r.fuel_pay==='due'?' বাকি':'')+'</span>':'—')+'</td>'+
+      '<td class="n">'+(+r.fuel_cost?amt(r.fuel_cost)+'<span class="nsub">'+q1(r.litres)+' লি.</span>':'—')+'</td>'+
       '<td class="n">'+(+r.deposit?amt(r.deposit):'—')+'</td>'+
-      '<td class="n">'+(+r.driver_wage?amt(r.driver_wage):'—')+(manyDrv&&r.driver_id?'<span class="nsub">'+esc(driverName(r.driver_id).replace(/^মোঃ\s*/,''))+'</span>':'')+'</td></tr>';
+      '<td class="n">'+(paid?amt(paid):'—')+'</td></tr>';
   }).join('');
   var first=rows.length?rows[0].date:null,last=rows.length?rows[rows.length-1].date:null;
   h+='<div class="ledger-head"><div><p class="eyebrow">ভেকুর দৈনিক হিসাব খাতা · '+esc(vName(v))+'</p><h2>'+esc(site?site.name:'সাইট বাছাই করা নেই')+'</h2></div>'+
-    '<dl class="meta">'+(first?'<div><dt>সময়</dt><dd>'+sdate(first)+(last!==first?' থেকে '+sdate(last):'')+'</dd></div>':'')+'<div><dt>কাজের দিন</dt><dd>'+DIG(Object.keys(rows.reduce(function(a,r){if(+r.hours>0)a[r.date]=1;return a;},{})).length)+' দিন</dd></div></dl></div>';
+    '<dl class="meta">'+(first?'<div><dt>সময়</dt><dd>'+sdate(first)+(last!==first?' থেকে '+sdate(last):'')+'</dd></div>':'')+'<div><dt>কাজের দিন</dt><dd>'+DIG(Object.keys(ents.reduce(function(a,r){if(+r.hours>0)a[r.date]=1;return a;},{})).length)+' দিন</dd></div></dl></div>';
   h+='<div class="tbl-wrap"><table class="khata fit"><thead><tr><th class="c1">তারিখ</th><th class="n">ঘণ্টা</th><th class="n">ডিজেল ৳</th><th class="n">জমা ৳</th><th class="n">ড্রাইভার ৳</th></tr></thead><tbody>'+body+'</tbody>'+
     '<tfoot><tr><td class="c1">মোট</td><td class="n">'+q1(t.hours)+'</td><td class="n">'+amt(t.fuel)+'<span class="nsub">'+q1(t.litres)+' লি.</span></td><td class="n">'+amt(t.deposit)+'</td><td class="n">'+amt(t.driver)+'</td></tr></tfoot></table></div>';
-  if(site&&sitePriced(site)){
-    var rates={};rows.forEach(function(r){if(+r.hours>0)rates[entryRate(r,site)]=1;});var rk=Object.keys(rates);
-    h+='<section class="panel"><dl class="facts">'+
-      '<div><dt>'+esc(vName(v))+'-এর কাজের দাম'+(site.bill_type!=='contract'&&rk.length===1?'<span class="by">'+q1(t.hours)+' ঘণ্টা × '+tk(+rk[0])+'</span>':'')+'</dt><dd>'+tk(t.income)+'</dd></div>'+
-      fact('দৈনিক খাতায় জমা পেয়েছেন',t.deposit,'pos')+
-      '<div><dt>'+esc(site.name)+'-এর কাছে মোট বাকি<span class="by">দুই ভেকু মিলে, আলাদা করে পাওয়া টাকাসহ</span></dt><dd class="'+(siteDue(site)>0?'neg':'pos')+'">'+tka(siteDue(site))+'</dd></div></dl>'+
-      '<button type="button" class="linkbtn" data-siteview="'+esc(site.id)+'">এই সাইটের পুরো হিসাব →</button></section>';
-  }
+  if(site)h+='<button type="button" class="linkbtn" data-siteview="'+esc(site.id)+'">এই সাইটের পাওনার হিসাব দেখুন</button>';
   return h+'<div class="below"><p class="hint">কোনো সারিতে চাপ দিলে সেটি বদলানো বা মুছে ফেলা যাবে।</p>'+csvBtn('entries')+'</div>';
 }
 function repRows(){
