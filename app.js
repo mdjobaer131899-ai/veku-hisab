@@ -489,11 +489,11 @@ function quick(k){
 function payerDefault(kind){var v='';try{v=localStorage.getItem('veku-payer-'+kind)||'';}catch(e){}var x=v?siteBy(v):null;return x&&x.status!=='done'?v:'';}
 function payerRemember(kind,v){try{localStorage.setItem('veku-payer-'+kind,v||'');}catch(e){}}
 function payerHint(id){var x=id?siteBy(id):null;return x?('টাকাটা '+esc(x.name)+'-এর কাছে পাওনা থেকে কাটা যাবে। আপনার হাতের ক্যাশে লাগবে না।'):'আপনার হাতের ক্যাশ থেকে গেছে ধরা হবে।';}
-function payerHTML(cur,attr){
+function payerHTML(cur,attr,siteOnly){
   var list=activeSites().slice(),c=cur?siteBy(cur):null;if(c&&list.indexOf(c)<0)list.push(c);
-  return '<label class="field"><span>টাকা কে দিল</span><select '+attr+'="1"><option value="">আমি দিলাম (হাতের টাকা থেকে)</option>'+
+  return '<label class="field"><span>টাকা কে দিল</span><select '+attr+'="1">'+(siteOnly?'<option value="">— সাইট বাছুন —</option>':'<option value="">আমি দিলাম (হাতের টাকা থেকে)</option>')+
     list.map(function(x){return '<option value="'+esc(x.id)+'"'+(x.id===cur?' selected':'')+'>'+esc(x.name)+' দিল (পাওনা থেকে কাটবে)</option>';}).join('')+
-    '</select><p class="hint payhint">'+payerHint(cur)+'</p></label>';
+    '</select><p class="hint payhint">'+(siteOnly&&!cur?'যে সাইটের ডিজেল, সেই সাইটের পাওনা থেকে কাটা যাবে।':payerHint(cur))+'</p></label>';
 }
 function payerPick(root,attr,v){var hn=root.querySelector('.payhint');if(hn)hn.innerHTML=payerHint(v);}
 /* which site's account a driver payment goes to */
@@ -685,7 +685,7 @@ function paidByLines(bySite,total,selfLabel){
   if(!bySite)return [];
   var L=[],other=0;Object.keys(bySite).forEach(function(k){var x=siteBy(k);other+=bySite[k];L.push(esc(x?x.name:'সাইট')+' দিয়েছে '+tk(bySite[k]));});
   if(!L.length)return [];
-  return [selfLabel+' '+tk(total-other)].concat(L);
+  return (Math.abs(total-other)>0.5?[selfLabel+' '+tk(total-other)]:[]).concat(L);
 }
 function wtableHTML(title,head,rows,foot){
   if(!rows.length)return '';
@@ -1344,7 +1344,7 @@ function openMini(mode,o){
     M.rec=o.rec||null;M.pick=!M.shop;M.payer=o.rec?(o.rec.paid_site_id||''):payerDefault('shop');
     title=M.pick?'ডিজেলের দোকানে টাকা দিলাম':M.shop+'-কে টাকা দিলাম';
     body=(M.pick?pickHTML('কোন দোকান বা পাম্পে',shopNames().map(function(n){var b=shopBal(n).bal;return [n,n+(b>0?' · বাকি '+tk(b):'')];})):
-      '<p class="from">এখন বাকি আছে: '+tk(shopBal(M.shop).bal)+'</p>')+payFields(o.rec)+payerHTML(M.payer,'data-mpayer');
+      '<p class="from">এখন বাকি আছে: '+tk(shopBal(M.shop).bal)+'</p>')+payFields(o.rec)+payerHTML(M.payer,'data-mpayer',true);
     if(o.rec)del='মুছে ফেলুন';
   }else if(mode==='shop-new'){
     title='দোকান বা পাম্প যোগ করুন';
@@ -1455,6 +1455,7 @@ async function submitMini(ev){
       if(!(amount>0))return mErr('কত টাকা, লিখুন।');
       var rec={date:date,amount:amount,note:$('#mNote').value.trim(),paid_site_id:M.payer||null};
       if(mode==='pay-driver'){var sv=$('#mSite').value;if(!sv)return mErr('কোন সাইটের হিসাবে দিলেন, বাছুন।');rec.site_id=sv==='none'?null:sv;}
+      if(mode==='pay-shop'&&!M.payer)return mErr('কোন সাইট টাকা দিল, বাছুন।');
       busy();
       var table=mode==='pay-driver'?'driver_payments':'shop_payments';
       if(M.rec)await q(sb.from(table).update(rec).eq('id',M.rec.id));
