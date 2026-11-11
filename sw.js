@@ -1,6 +1,6 @@
 // Keeps the app's own files on the phone so it opens quickly and still shows
 // its screens with a weak connection. Data always comes fresh from Supabase.
-const CACHE = 'veku-hisab-v1';
+const CACHE = 'veku-hisab-v2';
 const SHELL = ['/', '/index.html', '/app.js', '/config.js', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'];
 const LIB = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js';
 

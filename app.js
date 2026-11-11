@@ -295,7 +295,7 @@ function bannerHTML(){
   if(isOwnerApp()&&S.pending.length&&S.tab!=='home')return '<div class="banner wait"><p><b>ড্রাইভারের পাঠানো '+DIG(S.pending.length)+'টি হিসাব কনফার্মের অপেক্ষায়।</b></p><button type="button" class="btn small" data-go="home">দেখুন</button></div>';
   return '';
 }
-var D={id:null,veku:'v1',pay:'',delArmed:false,init:false};
+var D={id:null,veku:'v1',pay:'',delArmed:false,init:false,min:0,fuel:false,shop:''};
 function render(){
   renderCab();
   $('#banner').innerHTML=bannerHTML();
@@ -311,7 +311,7 @@ function render(){
     var a=S.acct,active=a&&a.driver&&a.driver.active!==false;
     $('#drv').hidden=!active;
     if(active){if(!D.init){D.init=true;resetDrv(null);}else drvVekuSeg();}
-    top.innerHTML=driverTopHTML();main.innerHTML=driverListHTML();S.shown='drv';
+    top.innerHTML='';main.innerHTML=driverTopHTML()+driverListHTML();S.shown='drv';
   }else if(isOwnerApp()){
     top.innerHTML='';
     if(!(S.tab==='owners'&&S.ownersDirty&&S.shown==='owners')){
@@ -491,10 +491,11 @@ function payerRemember(kind,v){try{localStorage.setItem('veku-payer-'+kind,v||''
 function payerHint(id){var x=id?siteBy(id):null;return x?('টাকাটা '+esc(x.name)+'-এর কাছে পাওনা থেকে কাটা যাবে। আপনার হাতের ক্যাশে লাগবে না।'):'আপনার হাতের ক্যাশ থেকে গেছে ধরা হবে।';}
 function payerHTML(cur,attr){
   var list=activeSites().slice(),c=cur?siteBy(cur):null;if(c&&list.indexOf(c)<0)list.push(c);
-  var opts=[['','আমি দিলাম','হাতের টাকা থেকে']].concat(list.map(function(x){return [x.id,x.name+' দিল','পাওনা থেকে কাটবে'];}));
-  return '<fieldset class="field"><legend>টাকা কে দিল</legend><div class="seg2 payseg">'+opts.map(function(o){return '<button type="button" '+attr+'="'+esc(o[0])+'" aria-pressed="'+(o[0]===(cur||''))+'"><span>'+esc(o[1])+'<small>'+o[2]+'</small></span></button>';}).join('')+'</div><p class="hint payhint">'+payerHint(cur)+'</p></fieldset>';
+  return '<label class="field"><span>টাকা কে দিল</span><select '+attr+'="1"><option value="">আমি দিলাম (হাতের টাকা থেকে)</option>'+
+    list.map(function(x){return '<option value="'+esc(x.id)+'"'+(x.id===cur?' selected':'')+'>'+esc(x.name)+' দিল (পাওনা থেকে কাটবে)</option>';}).join('')+
+    '</select><p class="hint payhint">'+payerHint(cur)+'</p></label>';
 }
-function payerPick(root,attr,v){root.querySelectorAll('['+attr+']').forEach(function(b){b.setAttribute('aria-pressed',String(b.getAttribute(attr)===v));});var hn=root.querySelector('.payhint');if(hn)hn.innerHTML=payerHint(v);}
+function payerPick(root,attr,v){var hn=root.querySelector('.payhint');if(hn)hn.innerHTML=payerHint(v);}
 /* which site's account a driver payment goes to */
 function drvLastSite(id){var e=S.entries.filter(function(x){return x.driver_id===id&&x.site_id;});return e.length?e[e.length-1].site_id:'';}
 function acctSiteHTML(cur,drv){
@@ -1041,30 +1042,63 @@ function drvVekuSeg(){
   $('#dVekuSeg').innerHTML=VK.map(function(x){return '<button type="button" class="'+x+'" data-dv="'+x+'" aria-pressed="'+(x===D.veku)+'">'+plate(x)+'<span>'+esc(vName(x))+'</span></button>';}).join('');
 }
 function dFuelCalc(){
-  var l=num($('#dLitres').value),r=num($('#dRate').value);
-  if(l>0&&r>0)$('#dFuelAmt').value=shown(Math.round(l*r));
+  var l=num($('#dLitres').value),r=num($('#dRate').value),t=l>0&&r>0?Math.round(l*r):0;
+  $('#dFuelAmt').value=t?String(t):'';
+  $('#dFuelFx').textContent=l>0?(q1(l)+' লিটার × '+rateTk(r)):'লিটার লিখলে মোট টাকা নিজে বসে যাবে';
+  $('#dFuelTotal').textContent=t?tk(t):'';
 }
+var MINS=[0,15,30,45];
+function drvMinSeg(){$('#dMinSeg').innerHTML=MINS.map(function(m){return '<button type="button" data-min="'+m+'" aria-pressed="'+(m===D.min)+'">'+DIG(m)+'</button>';}).join('');drvHrSum();}
+function drvHrSum(){
+  var h=num($('#dHr').value),t=(h>0?h:0)+D.min/60;
+  $('#dHrSum').innerHTML=t>0?'মোট <b>'+q1(t)+' ঘণ্টা</b>'+(D.min?' ('+DIG(Math.floor(h>0?h:0))+' ঘণ্টা '+DIG(D.min)+' মিনিট)':''):'';
+}
+function drvShopNames(){var L=(S.pub.shops||[]).slice();if(D.shop&&D.shop!=='__other'&&L.indexOf(D.shop)<0)L.push(D.shop);return L;}
+function drvShopSeg(){
+  $('#dShopSeg').innerHTML=drvShopNames().map(function(n){return '<button type="button" data-shop="'+esc(n)+'" aria-pressed="'+(n===D.shop)+'">'+esc(n)+'</button>';}).join('')+
+    '<button type="button" data-shop="__other" aria-pressed="'+(D.shop==='__other')+'">অন্য দোকান</button>';
+  $('#dSrcWrap').hidden=D.shop!=='__other';
+}
+function drvFuelUI(){
+  document.querySelectorAll('#dFuelSeg [data-fuel]').forEach(function(b){b.setAttribute('aria-pressed',String((b.dataset.fuel==='1')===D.fuel));});
+  $('#dFuelBox').hidden=!D.fuel;drvShopSeg();dFuelCalc();
+}
+function drvDayChips(){
+  var v=$('#dDate').value,t=todayISO(),y=isoAdd(t,-1);
+  document.querySelectorAll('#dDayChips [data-day]').forEach(function(b){b.setAttribute('aria-pressed',String(v===(b.dataset.day==='1'?y:t)));});
+}
+function isoAdd(iso,days){var d=new Date(iso+'T12:00:00');d.setDate(d.getDate()+days);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+/* when he has sent nothing yet, start from the excavator and site of his last approved day */
+function drvLastWork(){var st=(S.acct&&S.acct.statement)||[];for(var i=0;i<st.length;i++){if(st[i].kind==='earn')return st[i];}return null;}
+function drvLastShop(){for(var i=0;i<S.mine.length;i++){if(S.mine[i].fuel_src)return S.mine[i].fuel_src;}return (S.pub.shops||[])[0]||'';}
 function lastDRate(){
   for(var i=0;i<S.mine.length;i++){var m=S.mine[i];if(+m.litres>0&&+m.fuel_cost>0)return Math.round(m.fuel_cost/m.litres*100)/100;}
   return +S.pub.diesel_rate||0;
 }
 function resetDrv(rec){
   D.id=rec?rec.id:null;D.delArmed=false;
-  D.veku=rec?rec.veku:((S.mine[0]&&S.mine[0].veku)||D.veku||'v1');
+  var lw=drvLastWork();
+  D.veku=rec?rec.veku:((S.mine[0]&&S.mine[0].veku)||(lw&&lw.veku)||D.veku||'v1');
   drvVekuSeg();
-  var lastSid=rec?(rec.site_id||''):((S.mine[0]&&S.mine[0].site_id)||'');
+  var lastSid=rec?(rec.site_id||''):((S.mine[0]&&S.mine[0].site_id)||(lw&&lw.site_id)||'');
   fillDSite(lastSid&&siteBy(lastSid)?lastSid:'',rec&&!rec.site_id?(rec.site_name||''):'');
-  $('#dDate').value=rec?rec.date:todayISO();
-  $('#dHours').value=rec?shown(rec.hours):'';
-  $('#dLitres').value=rec?shown(rec.litres):'';
-  $('#dSrc').value=rec?(rec.fuel_src||''):'';
+  $('#dDate').value=rec?rec.date:todayISO();drvDayChips();
+  var hrs=rec?(+rec.hours||0):0,whole=Math.floor(hrs+1e-9),mins=Math.round((hrs-whole)*60/15)*15;
+  if(mins===60){whole+=1;mins=0;}
+  $('#dHr').value=rec&&hrs>0?shown(whole):'';D.min=mins;drvMinSeg();
+  D.fuel=!!(rec&&+rec.litres>0);
+  D.shop=rec&&rec.fuel_src?rec.fuel_src:drvLastShop();
+  $('#dSrc').value=rec&&D.shop&&(S.pub.shops||[]).indexOf(D.shop)<0?D.shop:'';
+  if(rec&&rec.fuel_src&&(S.pub.shops||[]).indexOf(rec.fuel_src)<0)D.shop='__other';
+  $('#dLitres').value=rec&&+rec.litres>0?shown(rec.litres):'';
   var rr=rec&&+rec.litres>0&&+rec.fuel_cost>0?Math.round(rec.fuel_cost/rec.litres*100)/100:lastDRate();
-  $('#dRate').value=rr?shown(rr):'';$('#dFuelAmt').value=rec?shown(rec.fuel_cost):'';
+  $('#dRate').value=rr?shown(rr):'';$('#dRateWrap').hidden=true;
+  drvFuelUI();
   $('#dRemarks').value=rec?(rec.remarks||''):'';
   $('#drvTitle').textContent=rec?'পাঠানো হিসাব বদলান':'আজকের কাজ লিখুন';
   $('#dSave').textContent=rec?'বদলে পাঠান':'পাঠিয়ে দিন';
   var del=$('#dDel');del.hidden=!rec;del.textContent='মুছে ফেলুন';del.classList.remove('armed');
-  $('#dCancel').hidden=!rec;$('#dErr').hidden=true;
+  $('#dCancel').hidden=!rec;$('#dEditActs').hidden=!rec;$('#dErr').hidden=true;
 }
 function fillDSite(sel,newName){
   var el=$('#dSiteSel');
@@ -1077,11 +1111,13 @@ async function submitDrv(ev){
   ev.preventDefault();
   var date=$('#dDate').value;
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return dErr('তারিখ দিন।');
-  var hours=num($('#dHours').value),litres=num($('#dLitres').value),fuel=0,src=$('#dSrc').value.trim();
-  if(!(hours>0)&&!(litres>0))return dErr('কত ঘণ্টা চালিয়েছেন, অথবা কত লিটার ডিজেল নিয়েছেন লিখুন।');
-  if(litres>0&&!src)return dErr('কোন দোকান বা পাম্প থেকে ডিজেল নিয়েছেন লিখুন।');
+  var hh=num($('#dHr').value),hours=Math.round(((hh>0?hh:0)+D.min/60)*100)/100;
+  var litres=D.fuel?num($('#dLitres').value):0,fuel=0,src=D.shop==='__other'?$('#dSrc').value.trim():(D.shop||'');
+  if(D.fuel&&!(litres>0))return dErr('কত লিটার ডিজেল নিয়েছেন লিখুন। ডিজেল না নিলে "না" চাপুন।');
+  if(!(hours>0)&&!(litres>0))return dErr('কত ঘণ্টা চালিয়েছেন লিখুন।');
+  if(litres>0&&!src)return dErr('কোন দোকান বা পাম্প থেকে ডিজেল নিয়েছেন বাছুন।');
   fuel=litres>0?num($('#dFuelAmt').value):0;
-  if(litres>0&&!(fuel>0))return dErr('ডিজেলের মোট টাকা লিখুন, অথবা দর দিন।');
+  if(litres>0&&!(fuel>0)){$('#dRateWrap').hidden=false;return dErr('ডিজেলের দর দিন, তাহলে মোট টাকা বসে যাবে।');}
   var dsel=$('#dSiteSel').value,dnew=$('#dSiteNew').value.trim();
   if(dsel==='__new'&&!dnew)return dErr('সাইটের নাম লিখুন।');
   if(hours>0&&!dsel)return dErr('কোন সাইটে কাজ করেছেন বাছুন। তালিকায় না থাকলে "তালিকায় নেই" বেছে নাম লিখুন।');
@@ -1589,7 +1625,7 @@ function sxOpen(tr){
   if(it.t==='repair')openSheet('repair',it.r);else if(it.t==='driver')openMini('pay-driver',{id:it.r.driver_id,rec:it.r});else openMini('pay-shop',{shop:it.r.shop,rec:it.r});
 }
 function sentryOpen(tr){var rec=(S.siteStmt[S.openSite]||[]).filter(function(r){return r.id===tr.dataset.sentry;})[0];if(rec)openSheet('entry',rec);}
-function mineOpen(li){var rec=S.mine.filter(function(x){return x.id===li.dataset.mine;})[0];if(rec&&(rec.status||'pending')==='pending'){resetDrv(rec);window.scrollTo(0,0);$('#dHours').focus();}}
+function mineOpen(li){var rec=S.mine.filter(function(x){return x.id===li.dataset.mine;})[0];if(rec&&(rec.status||'pending')==='pending'){resetDrv(rec);window.scrollTo(0,0);$('#dHr').focus();}}
 function dpayOpen(el){var id=S.openDriver,rec=(S.stmt[id]||[]).filter(function(x){return x.id===el.dataset.dpay&&x.kind==='paid';})[0];if(rec)openMini('pay-driver',{id:id,rec:rec});}
 function spayOpen(el){var nm=S.openShop,rec=(S.shopStmt[nm]||[]).filter(function(x){return x.id===el.dataset.spay&&x.kind==='paid';})[0];if(rec)openMini('pay-shop',{shop:nm,rec:rec});}
 document.addEventListener('click',function(e){
@@ -1602,7 +1638,6 @@ document.addEventListener('click',function(e){
   if((x=t.closest('#mini [data-genpw]'))){var inp=document.getElementById(x.dataset.genpw);if(inp)inp.value=genPw();return;}
   if((x=t.closest('#mini [data-mgo]'))){openMini(x.dataset.mgo,{driver:M.driver});return;}
   if((x=t.closest('#mini [data-copycred]'))){copyText(M.cred,$('#credBox'));return;}
-  if((x=t.closest('#mini [data-mpayer]'))){M.payer=x.dataset.mpayer;payerPick($('#miniBody'),'data-mpayer',M.payer);var ms=$('#mSite');if(M.mode==='pay-driver'&&ms&&M.payer)ms.value=M.payer;return;}
   if(t.closest('#mini'))return;
   var a=t.closest('[data-act]');
   if(a){
@@ -1663,7 +1698,7 @@ document.addEventListener('click',function(e){
   if((x=t.closest('tr[data-spay]'))){spayOpen(x);return;}
   if((x=t.closest('[data-mine]'))){mineOpen(x);return;}
 });
-document.addEventListener('change',function(e){if(e.target&&e.target.id==='mPick'&&M&&M.mode==='pay-driver'){var ms=$('#mSite');if(ms&&!ms.value){var ls=drvLastSite(e.target.value);if(ls)ms.value=ls;}return;}if(e.target&&e.target.id==='mLogin'){$('#mPwWrap').hidden=!e.target.checked;if(e.target.checked&&!$('#mPass').value)$('#mPass').value=genPw();}});
+document.addEventListener('change',function(e){if(e.target&&e.target.matches&&e.target.matches('#mini [data-mpayer]')){M.payer=e.target.value;payerPick($('#miniBody'),'data-mpayer',M.payer);var ms=$('#mSite');if(M.mode==='pay-driver'&&ms&&M.payer)ms.value=M.payer;return;}if(e.target&&e.target.id==='mPick'&&M&&M.mode==='pay-driver'){var ms=$('#mSite');if(ms&&!ms.value){var ls=drvLastSite(e.target.value);if(ls)ms.value=ls;}return;}if(e.target&&e.target.id==='mLogin'){$('#mPwWrap').hidden=!e.target.checked;if(e.target.checked&&!$('#mPass').value)$('#mPass').value=genPw();}});
 document.addEventListener('keydown',function(e){
   if(e.key==='Enter'&&e.target&&e.target.dataset&&e.target.dataset.apdep){e.preventDefault();var bt=document.querySelector('[data-apgo="'+e.target.dataset.apdep+'"]');if(bt)quickApprove(e.target.dataset.apdep,bt);return;}
   if(!(e.key==='Enter'||e.key===' ')||!e.target.matches)return;
@@ -1708,7 +1743,7 @@ $('#vekuSeg').addEventListener('click',function(e){var b=e.target.closest('[data
 $('#kindSeg').addEventListener('click',function(e){var b=e.target.closest('[data-kind]');if(b)setKind(b.dataset.kind);});
 $('#fPaySeg').addEventListener('click',function(e){var b=e.target.closest('[data-pay]');if(b)setFPay(F.pay===b.dataset.pay?'':b.dataset.pay);});
 $('#fSiteSel').addEventListener('change',function(){F.siteTouched=true;var isNew=this.value==='__new';$('#fSiteNewWrap').hidden=!isNew;if(isNew)setTimeout(function(){$('#fSiteNew').focus();},30);});
-$('#fPayerWrap').addEventListener('click',function(e){var b=e.target.closest('[data-fpayer]');if(!b)return;F.payer=b.dataset.fpayer;payerPick($('#fPayerWrap'),'data-fpayer',F.payer);});
+$('#fPayerWrap').addEventListener('change',function(e){var b=e.target.closest('[data-fpayer]');if(!b)return;F.payer=b.value;payerPick($('#fPayerWrap'),'data-fpayer',F.payer);});
 $('#fLitres').addEventListener('input',autoFuel);
 $('#fFuel').addEventListener('input',function(){F.fuelTouched=$('#fFuel').value.trim()!=='';});
 $('#fHours').addEventListener('input',autoWage);
@@ -1744,6 +1779,13 @@ $('#mDel').addEventListener('click',delMini);
 $('#dSiteSel').addEventListener('change',function(){var isNew=this.value==='__new';$('#dSiteNewWrap').hidden=!isNew;if(isNew)setTimeout(function(){$('#dSiteNew').focus();},30);});
 $('#dVekuSeg').addEventListener('click',function(e){var b=e.target.closest('[data-dv]');if(b){D.veku=b.dataset.dv;drvVekuSeg();}});
 $('#dLitres').addEventListener('input',dFuelCalc);
+$('#dHr').addEventListener('input',drvHrSum);
+$('#dDate').addEventListener('change',drvDayChips);
+$('#dDayChips').addEventListener('click',function(e){var b=e.target.closest('[data-day]');if(!b)return;var t=todayISO();$('#dDate').value=b.dataset.day==='1'?isoAdd(t,-1):t;drvDayChips();});
+$('#dMinSeg').addEventListener('click',function(e){var b=e.target.closest('[data-min]');if(!b)return;D.min=+b.dataset.min;drvMinSeg();});
+$('#dFuelSeg').addEventListener('click',function(e){var b=e.target.closest('[data-fuel]');if(!b)return;D.fuel=b.dataset.fuel==='1';drvFuelUI();if(D.fuel&&!$('#dLitres').value)setTimeout(function(){$('#dLitres').focus();},30);});
+$('#dShopSeg').addEventListener('click',function(e){var b=e.target.closest('[data-shop]');if(!b)return;D.shop=b.dataset.shop;drvShopSeg();if(D.shop==='__other')setTimeout(function(){$('#dSrc').focus();},30);});
+$('#dRateBtn').addEventListener('click',function(){var w=$('#dRateWrap');w.hidden=!w.hidden;if(!w.hidden)$('#dRate').focus();});
 $('#dRate').addEventListener('input',dFuelCalc);
 $('#drvForm').addEventListener('submit',submitDrv);
 $('#dCancel').addEventListener('click',function(){resetDrv(null);});

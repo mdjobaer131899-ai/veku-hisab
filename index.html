@@ -6,7 +6,7 @@
 <script>if(/\.github\.io$/i.test(location.hostname))location.replace("https://veku-hisab.vercel.app/");</script>
 <title>ভেকুর হিসাব খাতা</title>
 <meta name="description" content="দুই ভেকুর দৈনিক হিসাব, মেরামত খরচ, ড্রাইভারের মজুরি, ডিজেলের বাকি আর মালিকদের ভাগ।">
-<meta name="theme-color" content="#1D232A">
+<meta name="theme-color" content="#6E1322">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -15,38 +15,45 @@
 <meta name="apple-mobile-web-app-title" content="ভেকু হিসাব">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anek+Bangla:wdth,wght@75..125,400..800&family=Hind+Siliguri:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+Bengali:wght@400..800&display=swap">
 <style>
-/* Layout: dark machine-cab header band (sticky, scrollable tabs) over a steel-grey floor; one 980px column; ledgers scroll inside their own frames */
+/* Look: the red cloth-bound হিসাব খাতা. A crimson cover band with gold-foil title and a stitched edge,
+   white ruled pages on a cool floor, ledger tables ruled in blue with a red margin, machine-yellow for the one action that matters.
+   One type family: Sutonny where the device has it, else Noto Serif Bengali (same printed-Bangla look). */
+@font-face{font-family:"Sutonny";src:local("SutonnyOMJ"),local("SutonnyOMJ Regular");size-adjust:112%}
 :root{
-  --bg:#ECEEF0; --surface:#FFFFFF; --surface-2:#F4F5F7; --ink:#1A1F25; --muted:#5B6570; --line:#D6DBE0; --line-strong:#AEB6BF;
-  --cab:#1D232A; --cab-2:#2A323B; --cab-line:#3A434D; --cab-ink:#F1F2F3; --cab-muted:#A9B2BC;
-  --amber:#E8A20C; --amber-ink:#7A4D00; --amber-soft:#FBEFD0; --amber-on:#1A1F25;
-  --blue:#2B679C; --blue-soft:#DDE8F2; --blue-on:#FFFFFF;
-  --good:#1E7A4C; --good-soft:#DCEFE4; --bad:#B0372B; --bad-soft:#F6E0DD;
-  --seg-fuel:#56616D; --seg-driver:#9AA5B1; --seg-repair:#C2554A; --seg-profit:#2E9A63;
-  --shadow:0 1px 2px rgba(20,26,33,.06),0 4px 14px rgba(20,26,33,.06);
-  --f-display:"Anek Bangla","Hind Siliguri","Noto Sans Bengali",system-ui,sans-serif;
-  --f-num:"Hind Siliguri","Noto Sans Bengali",system-ui,sans-serif;
-  --f-body:"Hind Siliguri","Noto Sans Bengali",system-ui,sans-serif;
-  --r:12px;
+  --bg:#EDEFF2; --surface:#FFFFFF; --surface-2:#F5F7FA; --ink:#17202B; --muted:#596574; --line:#D7DFE9; --line-strong:#A8B6C7;
+  --cab:#6E1322; --cab-2:#57101C; --cab-line:rgba(226,190,112,.35); --cab-ink:#FFF3DC; --cab-muted:#E9C9BE;
+  --gold:#E2BE70; --gold-deep:#B88A2E;
+  --rule:#CCDAEC; --margin:#D8606C;
+  --amber:#F2B200; --amber-ink:#6B4A00; --amber-soft:#FFF4D1; --amber-on:#17202B;
+  --blue:#2B5E93; --blue-soft:#E1EBF6; --blue-on:#FFFFFF;
+  --good:#0D7646; --good-soft:#DDF0E5; --bad:#B21F33; --bad-soft:#F8E1E3;
+  --seg-fuel:#54606E; --seg-driver:#9AA6B4; --seg-repair:#C24452; --seg-profit:#1F9460;
+  --shadow:0 1px 0 rgba(23,32,43,.04),0 6px 18px -8px rgba(23,32,43,.16);
+  --f-display:"Sutonny","Noto Serif Bengali",serif;
+  --f-num:"Sutonny","Noto Serif Bengali",serif;
+  --f-body:"Sutonny","Noto Serif Bengali",serif;
+  --r:14px;
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){
   :root{
-    --bg:#121518; --surface:#1B2026; --surface-2:#22282F; --ink:#E6E9EC; --muted:#9AA4AE; --line:#2E353D; --line-strong:#4A535D;
-    --cab:#0C0F12; --cab-2:#1A1F25; --cab-line:#2E353D; --cab-ink:#F1F2F3; --cab-muted:#8F99A3;
-    --amber:#F0B02A; --amber-ink:#F4C55E; --amber-soft:#3A2D10; --amber-on:#14171A;
-    --blue:#5E9DD3; --blue-soft:#182A3B; --blue-on:#0E1114;
-    --good:#5CC58E; --good-soft:#15301F; --bad:#EE7D70; --bad-soft:#3A1D1A;
-    --seg-fuel:#7D8996; --seg-driver:#4B5560; --seg-repair:#D8695D; --seg-profit:#46B57B;
-    --shadow:0 1px 2px rgba(0,0,0,.3);
+    --bg:#0F1216; --surface:#181C22; --surface-2:#1F242B; --ink:#E9ECF0; --muted:#9BA6B3; --line:#2A323D; --line-strong:#465262;
+    --cab:#3D0B14; --cab-2:#2E0810; --cab-line:rgba(226,190,112,.28); --cab-ink:#F7E9CF; --cab-muted:#C9A99F;
+    --gold:#E6C784; --gold-deep:#C79B42;
+    --rule:#2B3747; --margin:#8E3C47;
+    --amber:#F6BF2A; --amber-ink:#F7CF63; --amber-soft:#3A2E0E; --amber-on:#14181D;
+    --blue:#6A9FD6; --blue-soft:#18293C; --blue-on:#0E1114;
+    --good:#58C48C; --good-soft:#14301F; --bad:#F07C86; --bad-soft:#3B171C;
+    --seg-fuel:#7D8996; --seg-driver:#4B5560; --seg-repair:#D8616D; --seg-profit:#46B57B;
+    --shadow:0 1px 0 rgba(0,0,0,.25);
     color-scheme:dark;
   }
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--bg);color:var(--ink);font:400 15px/1.6 var(--f-body)}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 15.5px/1.65 var(--f-body);-webkit-font-smoothing:antialiased}
 [hidden]{display:none!important}
 img{max-width:100%}
 h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;line-height:1.25}
@@ -326,6 +333,104 @@ dialog.sheetdlg::backdrop{background:rgba(8,10,13,.5)}
 .grow{flex:1}
 .grp{display:grid;gap:14px}
 
+
+/* ===== khata theme ===== */
+h1,h2,h3{font-weight:700;letter-spacing:0}
+/* cover band: woven cloth, gold foil title, stitched lower edge */
+.cab{background-color:var(--cab);background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.035) 0 1px,transparent 1px 4px),repeating-linear-gradient(-45deg,rgba(0,0,0,.08) 0 1px,transparent 1px 4px),linear-gradient(180deg,rgba(255,255,255,.05),rgba(0,0,0,.12));box-shadow:0 2px 0 var(--cab-2),0 10px 24px -14px rgba(60,8,18,.55)}
+.cab::after{content:"";position:absolute;left:10px;right:10px;bottom:5px;border-bottom:1.5px dashed var(--cab-line);pointer-events:none}
+.cab-inner{padding-block:12px 0}
+.cab-inner.solo{padding-block:12px 16px}
+.brand{gap:12px}
+.brand svg{width:38px;height:38px;color:var(--gold);filter:drop-shadow(0 1px 0 rgba(0,0,0,.35))}
+.brand h1{font:800 21px/1.2 var(--f-display);font-stretch:normal;letter-spacing:.01em;color:var(--gold);text-shadow:0 1px 0 rgba(0,0,0,.35),0 -1px 0 rgba(255,236,190,.18)}
+.brand-sub{font-size:12.5px;color:var(--cab-muted)}
+.period select,.cab-btn{background-color:rgba(0,0,0,.18);border-color:var(--cab-line);border-radius:10px}
+.tabs{margin-top:10px;padding-bottom:6px}
+.tabs .ti{display:none}
+.tabs button{color:var(--cab-muted);font:600 15px/1.3 var(--f-body);padding:10px 14px 12px}
+.tabs button[aria-selected="true"]{color:var(--gold);border-bottom-color:var(--gold)}
+/* phone: the tabs become a bottom bar; the active one wears the ledger's ribbon bookmark */
+@media (max-width:719px){
+  .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;margin:0;padding:6px max(8px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px));background:var(--surface);border-top:1px solid var(--line);box-shadow:0 -8px 24px -16px rgba(23,32,43,.35);overflow:visible}
+  .tabs button{position:relative;flex:1 1 0;display:grid;justify-items:center;gap:2px;padding:8px 2px 4px;border:0;color:var(--muted);font:600 13px/1.2 var(--f-body);min-height:56px}
+  .tabs .ti{display:block;width:24px;height:24px}
+  .tabs button[aria-selected="true"]{color:var(--cab)}
+  .tabs button[aria-selected="true"]::before{content:"";position:absolute;top:-7px;left:50%;width:18px;height:14px;margin-left:-9px;background:var(--cab);clip-path:polygon(0 0,100% 0,100% 100%,50% 70%,0 100%)}
+  .tabs .badge{position:absolute;top:4px;left:calc(50% + 6px);margin:0}
+  .cab-inner,.cab-inner.solo{padding-bottom:18px}
+  .wrap{padding-bottom:calc(170px + env(safe-area-inset-bottom,0px))}
+  .fab{bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+  .toast{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
+}
+@media (prefers-color-scheme: dark){.qbtn svg{color:var(--gold)}.subnav button[aria-selected="true"]{background:var(--cab);border-color:var(--gold-deep)}}
+@media (max-width:719px) and (prefers-color-scheme: dark){.tabs button[aria-selected="true"]{color:var(--gold)}.tabs button[aria-selected="true"]::before{background:var(--gold)}}
+
+/* pages */
+.vcard,.panel,.pcard{border-color:var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.panel h2,.vhead h3,.ledger-head h2,.empty h2,.sheet-head h2{font-weight:700}
+.big{font-family:var(--f-num);font-weight:800;letter-spacing:-.005em}
+.eyebrow{font-size:13px;letter-spacing:0}
+.subnav button{border-radius:12px;font-weight:700;align-content:center}
+.subnav button[aria-selected="true"]{background:var(--cab);border-color:var(--cab);color:var(--cab-ink)}
+.subnav button[aria-selected="true"] small{color:var(--gold);opacity:1}
+.qbtn,.tile{border-radius:14px}
+.qbtn svg{color:var(--cab)}
+.rcpt{border-radius:12px;background:var(--surface)}
+.rcpt>div{border-top-color:var(--rule)}
+.rcpt .rtot{background:var(--surface-2);border-top:3px double var(--ink)}
+.rcpt b{font-weight:800}
+.wtable td{border-bottom:1px solid var(--rule)}
+.wtable tfoot td{border-top:3px double var(--ink)}
+.facts>div{border-bottom:1px solid var(--rule)}
+
+/* ledger tables: blue ruling, red margin after the first column, double rule under totals */
+.tbl-wrap{border-radius:12px}
+.khata th{background:var(--surface);border-bottom:2px solid var(--ink);font-size:13px;color:var(--ink)}
+.khata td{border-bottom:1px solid var(--rule)}
+.khata .c1{border-right:3px double var(--margin)}
+.khata thead .c1,.khata tfoot .c1{background:var(--surface)}
+.khata tfoot td{background:var(--surface);border-top:1px solid var(--ink);border-bottom:3px double var(--ink)}
+.khata tbody tr.click:hover td{background:var(--amber-soft)}
+
+/* controls */
+.btn{border-radius:12px;font-weight:700}
+.btn.primary{background:var(--amber);border-color:#D49B00;color:var(--amber-on);box-shadow:inset 0 -2px 0 rgba(0,0,0,.14)}
+.btn.primary:active{box-shadow:inset 0 1px 0 rgba(0,0,0,.18);transform:translateY(1px)}
+.fab{font-weight:800;box-shadow:0 8px 22px -6px rgba(110,19,34,.45),inset 0 -2px 0 rgba(0,0,0,.14)}
+.field>span,.field>legend{font-size:14px;font-weight:700}
+.field input,.field select{border-radius:11px;min-height:48px;font-weight:500}
+.seg2 button{border-radius:11px;min-height:48px;font-weight:600}
+.seg2 button[aria-pressed="true"]{background:var(--amber-soft);border-color:#D49B00;box-shadow:inset 0 0 0 1px #D49B00;font-weight:800}
+fieldset.sub{border-radius:12px}
+dialog.sheetdlg{border-radius:22px 22px 0 0}
+@media (min-width:640px){dialog.sheetdlg{border-radius:22px}}
+.authbox{border-radius:20px}
+.st{font-weight:700}
+
+/* driver page form */
+.drvform-head{display:grid;gap:2px}
+.daychips{display:flex;gap:6px;margin-top:2px}
+.daychips button{flex:1 1 0;min-height:40px;border-radius:999px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);font:700 14px/1 var(--f-body);cursor:pointer}
+.daychips button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--surface)}
+.hrs{display:grid;grid-template-columns:96px minmax(0,1fr);gap:10px;align-items:end}
+.hrs .field input{text-align:center;font-size:22px;font-weight:700}
+.minseg{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.minseg button{min-height:48px;min-width:52px;border-radius:11px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);font:700 15px/1.1 var(--f-num);cursor:pointer;display:grid;place-items:center;gap:0}
+.minseg button small{font:500 11px/1.1 var(--f-body);color:var(--muted)}
+.minseg button[aria-pressed="true"]{background:var(--amber-soft);border-color:#D49B00;box-shadow:inset 0 0 0 1px #D49B00}
+.hrsum{font-size:14px;color:var(--muted)}
+.hrsum b{color:var(--ink);font-family:var(--f-num)}
+.fuelq .seg2 button{min-height:52px;font-size:15.5px}
+.shopseg{display:flex;flex-wrap:wrap;gap:6px}
+.shopseg button{flex:1 1 auto;min-height:44px;padding:6px 14px;border-radius:999px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);font:600 14.5px/1.2 var(--f-body);cursor:pointer}
+.shopseg button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--surface)}
+.fuelcalc{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 12px;padding:12px 14px;border-radius:12px;background:var(--surface);border:1px dashed var(--line-strong)}
+.fuelcalc .fx{font-size:14px;color:var(--muted);font-family:var(--f-num)}
+.fuelcalc b{font:800 22px/1.2 var(--f-num);color:var(--ink)}
+.drv-send{position:sticky;bottom:0;z-index:5;margin-inline:-4px;padding:14px 4px calc(10px + env(safe-area-inset-bottom,0px));background:linear-gradient(to bottom,transparent,var(--surface) 38%)}
+.drv-send .btn.primary{width:100%;min-height:54px;font-size:17px}
+
 @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
@@ -348,10 +453,10 @@ dialog.sheetdlg::backdrop{background:rgba(8,10,13,.5)}
       <button type="button" class="cab-btn" id="drvLogout" hidden>বের হন</button>
     </div>
     <nav class="tabs" id="tabs" role="tablist" aria-label="পাতা" hidden>
-      <button type="button" role="tab" data-group="home" aria-selected="true">আজ<span class="badge" id="pendBadge" hidden></span></button>
-      <button type="button" role="tab" data-group="book" aria-selected="false">খাতা</button>
-      <button type="button" role="tab" data-group="acc" aria-selected="false">পাওনা-দেনা</button>
-      <button type="button" role="tab" data-group="own" aria-selected="false">মালিক</button>
+      <button type="button" role="tab" data-group="home" aria-selected="true"><svg class="ti" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5"/><path d="M6.5 10v9h11v-9"/><path d="M10 19v-5h4v5"/></svg><span class="tl">আজ</span><span class="badge" id="pendBadge" hidden></span></button>
+      <button type="button" role="tab" data-group="book" aria-selected="false"><svg class="ti" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4.5h11.5A2.5 2.5 0 0 1 19 7v13H7.5A2.5 2.5 0 0 1 5 17.5z"/><path d="M5 17.5A2.5 2.5 0 0 1 7.5 15H19"/><path d="M9 4.5v10.5"/></svg><span class="tl">খাতা</span></button>
+      <button type="button" role="tab" data-group="acc" aria-selected="false"><svg class="ti" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v16"/><path d="M5 8h14"/><path d="M5 8l-2.5 6a3 3 0 0 0 5 0z"/><path d="M19 8l-2.5 6a3 3 0 0 0 5 0z"/><path d="M8.5 20h7"/></svg><span class="tl">পাওনা-দেনা</span></button>
+      <button type="button" role="tab" data-group="own" aria-selected="false"><svg class="ti" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5"/></svg><span class="tl">মালিক</span></button>
     </nav>
   </div>
 </header>
@@ -388,27 +493,38 @@ dialog.sheetdlg::backdrop{background:rgba(8,10,13,.5)}
       <fieldset class="field"><legend>কোন ভেকু চালিয়েছেন</legend><div class="seg2" id="dVekuSeg"></div></fieldset>
       <label class="field"><span>কোন সাইটে কাজ করেছেন</span><select id="dSiteSel"></select></label>
       <label class="field" id="dSiteNewWrap" hidden><span>সাইটের নাম</span><input type="text" id="dSiteNew" autocomplete="off" placeholder="যেমন: রহমানের পুকুর খনন"></label>
-      <div class="grid2">
-        <label class="field"><span>তারিখ</span><input type="date" id="dDate"></label>
-        <label class="field"><span>কত ঘণ্টা চালিয়েছেন</span><input type="text" class="num" id="dHours" inputmode="decimal" autocomplete="off" placeholder="যেমন ৭.৫"></label>
+      <div class="field"><span>কোন দিনের কাজ</span>
+        <div class="daychips" id="dDayChips"><button type="button" data-day="0" aria-pressed="true">আজ</button><button type="button" data-day="1" aria-pressed="false">গতকাল</button></div>
+        <input type="date" id="dDate" aria-label="তারিখ">
       </div>
-      <fieldset class="field sub">
-        <legend>ডিজেল নিলে <em>না নিলে খালি রাখুন</em></legend>
-        <label class="field"><span>কোন দোকান বা পাম্প থেকে</span><input type="text" id="dSrc" list="shopList" autocomplete="off" placeholder="দোকান বা পাম্পের নাম"></label>
-        <div class="grid2">
-          <label class="field"><span>কত লিটার</span><input type="text" class="num" id="dLitres" inputmode="decimal" autocomplete="off" placeholder="যেমন ২০০"></label>
-          <label class="field"><span>দর <em>প্রতি লিটার ৳</em></span><input type="text" class="num" id="dRate" inputmode="decimal" autocomplete="off" placeholder="যেমন ১০৫"></label>
+      <fieldset class="field"><legend>কত সময় চালিয়েছেন</legend>
+        <div class="hrs">
+          <label class="field"><span>ঘণ্টা</span><input type="text" class="num" id="dHr" inputmode="numeric" autocomplete="off" placeholder="০"></label>
+          <div class="field"><span>মিনিট</span><div class="minseg" id="dMinSeg"></div></div>
         </div>
-        <label class="field"><span>মোট টাকা <em>লিটার আর দর দিলে নিজে বসে যাবে</em></span><input type="text" class="num key" id="dFuelAmt" inputmode="decimal" autocomplete="off" placeholder="৳"></label>
+        <p class="hrsum" id="dHrSum"></p>
+      </fieldset>
+      <fieldset class="field fuelq"><legend>এই দিনে ডিজেল নিয়েছেন?</legend>
+        <div class="seg2" id="dFuelSeg"><button type="button" data-fuel="0" aria-pressed="true">না</button><button type="button" data-fuel="1" aria-pressed="false">হ্যাঁ, নিয়েছি</button></div>
+      </fieldset>
+      <fieldset class="field sub" id="dFuelBox" hidden>
+        <legend>ডিজেলের হিসাব</legend>
+        <div class="field"><span>কোন দোকান বা পাম্প থেকে</span><div class="shopseg" id="dShopSeg"></div></div>
+        <label class="field" id="dSrcWrap" hidden><span>দোকান বা পাম্পের নাম</span><input type="text" id="dSrc" list="shopList" autocomplete="off" placeholder="নাম লিখুন"></label>
+        <label class="field"><span>কত লিটার</span><input type="text" class="num" id="dLitres" inputmode="decimal" autocomplete="off" placeholder="যেমন ৫০"></label>
+        <div class="fuelcalc"><span class="fx" id="dFuelFx"></span><b id="dFuelTotal"></b></div>
+        <button type="button" class="linkbtn" id="dRateBtn">দর বদলান</button>
+        <label class="field" id="dRateWrap" hidden><span>দর <em>প্রতি লিটার ৳</em></span><input type="text" class="num" id="dRate" inputmode="decimal" autocomplete="off"></label>
+        <input type="hidden" id="dFuelAmt">
       </fieldset>
       <label class="field"><span>মন্তব্য <em>দরকার হলে</em></span><input type="text" id="dRemarks" autocomplete="off" placeholder="যেমন: বৃষ্টিতে আধা দিন কাজ"></label>
       <p class="form-err" id="dErr" role="alert" hidden></p>
-      <div class="sheet-actions">
+      <div class="sheet-actions" id="dEditActs" hidden>
         <button type="button" class="btn danger" id="dDel" hidden>মুছে ফেলুন</button>
         <span class="grow"></span>
         <button type="button" class="btn ghost" id="dCancel" hidden>বাতিল</button>
-        <button type="submit" class="btn primary" id="dSave">পাঠিয়ে দিন</button>
       </div>
+      <div class="drv-send"><button type="submit" class="btn primary" id="dSave">পাঠিয়ে দিন</button></div>
     </form>
   </section>
 
