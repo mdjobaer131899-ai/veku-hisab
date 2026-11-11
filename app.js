@@ -85,12 +85,12 @@ function fnErrText(e){return FNERR[e&&e.code]||errText(e);}
 
 /* ---------- state ---------- */
 var S={phase:'boot',role:null,user:null,needSetup:false,tab:'home',bookSite:{},repAll:false,sub:{book:'daily',acc:'sites',own:'sum'},brk:null,siteExtra:{},veku:'v1',year:now.getFullYear(),month:now.getMonth()+1,
-  settings:normSettings(null),drivers:[],entries:[],repairs:[],pending:[],dbal:{},dpaid:{},sbal:[],sites:[],ssum:{},sitePays:[],ownerTx:[],cash:null,season:null,seasonFrom:'',seasonTo:'',
+  settings:normSettings(null),drivers:[],entries:[],repairs:[],pending:[],dbal:{},dpaid:{},spaid:{},sbal:[],sites:[],ssum:{},sitePays:[],ownerTx:[],cash:null,season:null,seasonFrom:'',seasonTo:'',
   openDriver:null,openShop:null,openSite:null,stmt:{},shopStmt:{},siteStmt:{},
   acct:null,pub:{vekus:normVekus(),shops:[],sites:[]},mine:[],openMine:false,apDep:{},
   loadErr:'',ownersDraft:null,ownersDirty:false,shown:''};
 function resetData(){
-  S.settings=normSettings(null);S.drivers=[];S.entries=[];S.repairs=[];S.pending=[];S.dbal={};S.dpaid={};S.sbal=[];S.stmt={};S.shopStmt={};
+  S.settings=normSettings(null);S.drivers=[];S.entries=[];S.repairs=[];S.pending=[];S.dbal={};S.dpaid={};S.spaid={};S.sbal=[];S.stmt={};S.shopStmt={};
   S.sites=[];S.ssum={};S.siteStmt={};S.openSite=null;S.sitePays=[];S.ownerTx=[];S.cash=null;S.season=null;S.seasonFrom='';S.seasonTo='';S.apDep={};
   S.acct=null;S.mine=[];S.ownersDraft=null;S.ownersDirty=false;S.tab='home';S.brk=null;S.siteExtra={};S.openDriver=null;S.openShop=null;
 }
@@ -129,10 +129,12 @@ function setBrk(rows){
 /* what each driver has taken, by the site whose account it was booked to ('' = no site chosen) */
 function qDpaid(){return fetchAll(function(){return sb.from('driver_payments').select('driver_id,site_id,amount').order('date').order('created_at');}).catch(function(){return null;});}
 function setDpaid(rows){var m={};(rows||[]).forEach(function(r){var x=m[r.driver_id]||(m[r.driver_id]={});var k=r.site_id||'';x[k]=(x[k]||0)+(+r.amount||0);});S.dpaid=m;}
+function qSpaid(){return fetchAll(function(){return sb.from('shop_payments').select('shop,for_site_id,amount').order('date').order('created_at');}).catch(function(){return null;});}
+function setSpaid(rows){var m={};(rows||[]).forEach(function(r){var x=m[r.shop]||(m[r.shop]={});var k=r.for_site_id||'';x[k]=(x[k]||0)+(+r.amount||0);});S.spaid=m;}
 function setSsum(rows){var m={};(rows||[]).forEach(function(r){m[r.site_id]=r;});S.ssum=m;}
 async function loadOwner(){
-  var r=await Promise.all([qSettings(),qDrivers(),qEntries(),qRepairs(),qPending(),q(sb.rpc('driver_balances')),q(sb.rpc('shop_balances')),qSites(),q(sb.rpc('site_totals')),qSitePays(),qOwnerTx(),qWork(),qBrk(),qDpaid()]);
-  S.settings=normSettings(r[0]);S.drivers=r[1]||[];S.entries=r[2];S.repairs=r[3];S.pending=r[4]||[];setDbal(r[5]);S.sbal=r[6]||[];S.sites=r[7]||[];setSsum(r[8]);S.sitePays=r[9]||[];S.ownerTx=r[10]||[];setDwork(r[11]);setBrk(r[12]);setDpaid(r[13]);
+  var r=await Promise.all([qSettings(),qDrivers(),qEntries(),qRepairs(),qPending(),q(sb.rpc('driver_balances')),q(sb.rpc('shop_balances')),qSites(),q(sb.rpc('site_totals')),qSitePays(),qOwnerTx(),qWork(),qBrk(),qDpaid(),qSpaid()]);
+  S.settings=normSettings(r[0]);S.drivers=r[1]||[];S.entries=r[2];S.repairs=r[3];S.pending=r[4]||[];setDbal(r[5]);S.sbal=r[6]||[];S.sites=r[7]||[];setSsum(r[8]);S.sitePays=r[9]||[];S.ownerTx=r[10]||[];setDwork(r[11]);setBrk(r[12]);setDpaid(r[13]);setSpaid(r[14]);
   if(S.settings.owners.some(function(o){return !o.id;})){var st=clone(S.settings);st.owners.forEach(function(o){if(!o.id)o.id=uid();});saveSettings(st).catch(function(){});}
 }
 function qSitePays(){return fetchAll(function(){return sb.from('site_payments').select('*').order('date').order('created_at');});}
@@ -140,7 +142,7 @@ function qOwnerTx(){return fetchAll(function(){return sb.from('owner_tx').select
 async function reloadSitePays(){S.sitePays=await qSitePays();S.cash=null;}
 async function reloadOwnerTx(){S.ownerTx=await qOwnerTx();S.cash=null;}
 async function reloadYear(){var r=await Promise.all([qEntries(),qRepairs()]);S.entries=r[0];S.repairs=r[1];S.cash=null;}
-async function reloadBal(){var r=await Promise.all([q(sb.rpc('driver_balances')),q(sb.rpc('shop_balances')),q(sb.rpc('site_totals')),qWork(),qBrk(),qDpaid()]);setDbal(r[0]);S.sbal=r[1]||[];setSsum(r[2]);setDwork(r[3]);setBrk(r[4]);setDpaid(r[5]);S.stmt={};S.shopStmt={};S.siteStmt={};S.siteExtra={};S.cash=null;}
+async function reloadBal(){var r=await Promise.all([q(sb.rpc('driver_balances')),q(sb.rpc('shop_balances')),q(sb.rpc('site_totals')),qWork(),qBrk(),qDpaid(),qSpaid()]);setDbal(r[0]);S.sbal=r[1]||[];setSsum(r[2]);setDwork(r[3]);setBrk(r[4]);setDpaid(r[5]);setSpaid(r[6]);S.stmt={};S.shopStmt={};S.siteStmt={};S.siteExtra={};S.cash=null;}
 async function reloadSites(){S.sites=await qSites()||[];}
 async function reloadDrivers(){S.drivers=await qDrivers()||[];}
 async function reloadSettings(){S.settings=normSettings(await qSettings());}
@@ -651,7 +653,7 @@ function driverStmtRows(list){
 function shopStmtRows(list){
   if(!list)return null;
   return list.map(function(r){return {kind:r.kind,id:r.id,date:r.date,amount:+r.amount||0,
-    text:r.kind==='paid'?((r.payer?'<span class="paidby">'+esc(r.payer)+' দিয়েছে</span>':'টাকা দিয়েছি')+(r.note?' · '+esc(r.note):'')):(esc(vName(r.veku))+' · '+q1(r.litres)+' লিটার')};});
+    text:r.kind==='paid'?((r.site?esc(r.site)+'-এর ডিজেলের টাকা শোধ':'টাকা দিয়েছি')+(r.note?' · '+esc(r.note):'')):(esc(vName(r.veku))+(r.site?' · '+esc(r.site):'')+' · '+q1(r.litres)+' লিটার')};});
 }
 async function loadDriverStmt(id){try{S.stmt[id]=await q(sb.rpc('driver_statement',{p_driver:id}))||[];}catch(e){S.stmt[id]=[];toast(errText(e));}render();}
 async function loadShopStmt(name){try{S.shopStmt[name]=await q(sb.rpc('shop_statement',{p_shop:name}))||[];}catch(e){S.shopStmt[name]=[];toast(errText(e));}render();}
@@ -741,6 +743,28 @@ function driversHTML(){
 function siteUrl(){return location.origin+location.pathname.replace(/index\.html$/,'');}
 
 /* ----- owner: diesel shops ----- */
+/* per site: diesel taken on credit there, paid off from that site's money, left */
+function shopSiteAcct(shop){
+  var m={},order=[];function g(k){if(!m[k]){m[k]={site_id:k,due:0,paid:0};order.push(k);}return m[k];}
+  S.entries.forEach(function(e){if(e.fuel_pay==='due'&&e.fuel_src===shop)g(e.site_id||'').due+=+e.fuel_cost||0;});
+  var p=S.spaid[shop]||{};Object.keys(p).forEach(function(k){g(k).paid+=p[k];});
+  return order.map(function(k){return m[k];}).sort(function(a,b){return (a.site_id?0:1)-(b.site_id?0:1)||(b.due-b.paid)-(a.due-a.paid);});
+}
+function shopSitesHTML(shop){
+  var L=shopSiteAcct(shop);if(!L.length)return '';
+  var rows=L.map(function(r){var st=r.site_id?siteBy(r.site_id):null,left=r.due-r.paid;
+    return [r.site_id?esc(st?st.name:'সাইট'):'সাইট বাছা নেই',r.due?tk(r.due):'—',r.paid?tk(r.paid):'—',Math.abs(left)<0.5?'শোধ':left>0?'<span class="neg">'+tk(left)+'</span>':'বেশি '+tka(left)];});
+  return wtableHTML('সাইটভিত্তিক হিসাব',['সাইট','বাকিতে নেওয়া','শোধ','বাকি'],rows,null);
+}
+function shopTopSite(shop){var L=shopSiteAcct(shop).filter(function(r){return r.site_id&&r.due-r.paid>0.5;});return L.length?L[0].site_id:'';}
+function shopSiteHTML(cur,shop){
+  var used=shopSiteAcct(shop).map(function(r){return r.site_id;});
+  var list=S.sites.filter(function(x){return x.status!=='done'||used.indexOf(x.id)>=0||x.id===cur;});
+  return '<label class="field"><span>কোন সাইটের ডিজেলের টাকা</span><select id="mShopSite"><option value="">— সাইট বাছুন —</option>'+
+    list.map(function(x){var r=shopSiteAcct(shop).filter(function(a){return a.site_id===x.id;})[0],left=r?r.due-r.paid:0;
+      return '<option value="'+esc(x.id)+'"'+(x.id===cur?' selected':'')+'>'+esc(x.name)+(left>0.5?' · বাকি '+tk(left):'')+'</option>';}).join('')+
+    '</select><p class="hint">সাইট যে জমা দিয়েছে, সেখান থেকেই এই টাকা গেছে। তাই সাইটের পাওনায় কোনো যোগ-বিয়োগ হবে না।</p></label>';
+}
 function dieselHTML(){
   var shops=shopNames().map(function(s){return {name:s,b:shopBal(s)};}).sort(function(a,b){return b.b.bal-a.b.bal;});
   var total=sum(shops,function(s){return s.b.bal>0?s.b.bal:0;});
@@ -750,7 +774,7 @@ function dieselHTML(){
     var open=S.openShop===s.name,inList=S.settings.shops.indexOf(s.name)>=0;
     return '<article class="pcard'+(open?' wide':'')+'"><div class="phead"><b>'+esc(s.name)+'</b></div>'+
       '<div class="kv3"><div><span>বাকিতে নেওয়া</span><b>'+tk(s.b.due)+'</b></div><div><span>শোধ হয়েছে</span><b>'+tk(s.b.paid)+'</b></div><div><span>'+(s.b.bal<0?'বেশি দিয়েছেন':'বাকি আছে')+'</span><b class="'+(s.b.bal>0?'neg':'')+'">'+tka(s.b.bal)+'</b></div></div>'+
-      (function(){var L=paidByLines(S.brk&&S.brk.shopPaidBy[s.name],s.b.paid,'আপনি দিয়েছেন');return L.length?'<p class="hint paidby">'+L.join(' · ')+'</p>':'';})()+
+      shopSitesHTML(s.name)+
       '<div class="actions"><button type="button" class="btn primary small" data-spaynew="'+esc(s.name)+'">টাকা দিলাম লিখুন</button><button type="button" class="btn small" data-sopen="'+esc(s.name)+'">'+(open?'হিসাব লুকান':'হিসাব দেখুন')+'</button>'+
       (inList&&Math.abs(s.b.bal)<1&&!s.b.due&&!s.b.paid?'<button type="button" class="btn ghost small" data-sremove="'+esc(s.name)+'">তালিকা থেকে সরান</button>':'')+'</div>'+
       (open?stmtTable(shopStmtRows(S.shopStmt[s.name]),['ডিজেল নেওয়া (৳)','টাকা দিয়েছি (৳)'],'data-spay'):'')+'</article>';
@@ -1341,10 +1365,10 @@ function openMini(mode,o){
       acctSiteHTML(o.rec?(o.rec.site_id||''):(M.payer||(M.pick?'':drvLastSite(M.id))),M.id)+payerHTML(M.payer,'data-mpayer');
     if(o.rec)del='মুছে ফেলুন';
   }else if(mode==='pay-shop'){
-    M.rec=o.rec||null;M.pick=!M.shop;M.payer=o.rec?(o.rec.paid_site_id||''):payerDefault('shop');
+    M.rec=o.rec||null;M.pick=!M.shop;M.payer='';
     title=M.pick?'ডিজেলের দোকানে টাকা দিলাম':M.shop+'-কে টাকা দিলাম';
     body=(M.pick?pickHTML('কোন দোকান বা পাম্পে',shopNames().map(function(n){var b=shopBal(n).bal;return [n,n+(b>0?' · বাকি '+tk(b):'')];})):
-      '<p class="from">এখন বাকি আছে: '+tk(shopBal(M.shop).bal)+'</p>')+payFields(o.rec)+payerHTML(M.payer,'data-mpayer',true);
+      '<p class="from">এখন বাকি আছে: '+tk(shopBal(M.shop).bal)+'</p>')+payFields(o.rec)+(M.pick?'<div id="mShopSiteWrap"></div>':shopSiteHTML(o.rec?(o.rec.for_site_id||''):shopTopSite(M.shop),M.shop));
     if(o.rec)del='মুছে ফেলুন';
   }else if(mode==='shop-new'){
     title='দোকান বা পাম্প যোগ করুন';
@@ -1455,13 +1479,13 @@ async function submitMini(ev){
       if(!(amount>0))return mErr('কত টাকা, লিখুন।');
       var rec={date:date,amount:amount,note:$('#mNote').value.trim(),paid_site_id:M.payer||null};
       if(mode==='pay-driver'){var sv=$('#mSite').value;if(!sv)return mErr('কোন সাইটের হিসাবে দিলেন, বাছুন।');rec.site_id=sv==='none'?null:sv;}
-      if(mode==='pay-shop'&&!M.payer)return mErr('কোন সাইট টাকা দিল, বাছুন।');
+      if(mode==='pay-shop'){var fs=$('#mShopSite')&&$('#mShopSite').value;if(!fs)return mErr('কোন সাইটের ডিজেলের টাকা, বাছুন।');rec.for_site_id=fs;rec.paid_site_id=null;}
       busy();
       var table=mode==='pay-driver'?'driver_payments':'shop_payments';
       if(M.rec)await q(sb.from(table).update(rec).eq('id',M.rec.id));
-      else{if(mode==='pay-driver')rec.driver_id=M.pick?pk:M.id;else rec.shop=M.pick?pk:M.shop;await q(sb.from(table).insert(rec));payerRemember(mode==='pay-driver'?'driver':'shop',M.payer);}
+      else{if(mode==='pay-driver')rec.driver_id=M.pick?pk:M.id;else rec.shop=M.pick?pk:M.shop;await q(sb.from(table).insert(rec));if(mode==='pay-driver')payerRemember('driver',M.payer);}
       await reloadBal();
-      var who=M.payer&&siteBy(M.payer)?siteBy(M.payer).name:'';
+      var who=mode==='pay-driver'&&M.payer&&siteBy(M.payer)?siteBy(M.payer).name:'';
       toast(who?'সংরক্ষিত হয়েছে · '+who+'-এর পাওনা থেকে কাটা হয়েছে':'সংরক্ষিত হয়েছে');
     }else if(mode==='shop-new'){
       var nm=$('#mName').value.trim();if(!nm)return mErr('দোকান বা পাম্পের নাম লিখুন।');
@@ -1699,7 +1723,7 @@ document.addEventListener('click',function(e){
   if((x=t.closest('tr[data-spay]'))){spayOpen(x);return;}
   if((x=t.closest('[data-mine]'))){mineOpen(x);return;}
 });
-document.addEventListener('change',function(e){if(e.target&&e.target.matches&&e.target.matches('#mini [data-mpayer]')){M.payer=e.target.value;payerPick($('#miniBody'),'data-mpayer',M.payer);var ms=$('#mSite');if(M.mode==='pay-driver'&&ms&&M.payer)ms.value=M.payer;return;}if(e.target&&e.target.id==='mPick'&&M&&M.mode==='pay-driver'){var ms=$('#mSite');if(ms&&!ms.value){var ls=drvLastSite(e.target.value);if(ls)ms.value=ls;}return;}if(e.target&&e.target.id==='mLogin'){$('#mPwWrap').hidden=!e.target.checked;if(e.target.checked&&!$('#mPass').value)$('#mPass').value=genPw();}});
+document.addEventListener('change',function(e){if(e.target&&e.target.matches&&e.target.matches('#mini [data-mpayer]')){M.payer=e.target.value;payerPick($('#miniBody'),'data-mpayer',M.payer);var ms=$('#mSite');if(M.mode==='pay-driver'&&ms&&M.payer)ms.value=M.payer;return;}if(e.target&&e.target.id==='mPick'&&M&&M.mode==='pay-shop'){var w=$('#mShopSiteWrap');if(w)w.innerHTML=e.target.value?shopSiteHTML(shopTopSite(e.target.value),e.target.value):'';return;}if(e.target&&e.target.id==='mPick'&&M&&M.mode==='pay-driver'){var ms=$('#mSite');if(ms&&!ms.value){var ls=drvLastSite(e.target.value);if(ls)ms.value=ls;}return;}if(e.target&&e.target.id==='mLogin'){$('#mPwWrap').hidden=!e.target.checked;if(e.target.checked&&!$('#mPass').value)$('#mPass').value=genPw();}});
 document.addEventListener('keydown',function(e){
   if(e.key==='Enter'&&e.target&&e.target.dataset&&e.target.dataset.apdep){e.preventDefault();var bt=document.querySelector('[data-apgo="'+e.target.dataset.apdep+'"]');if(bt)quickApprove(e.target.dataset.apdep,bt);return;}
   if(!(e.key==='Enter'||e.key===' ')||!e.target.matches)return;
